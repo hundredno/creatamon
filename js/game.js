@@ -589,18 +589,29 @@
       g.closePath(); g.fillStyle = fill; g.fill(); g.stroke();
     };
     if (egg) {
-      const line = (x1, y1, x2, y2) => { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); };
-      poly([[24, 99], [27, 72], [40, 62], [60, 62], [73, 72], [76, 99]], '#1d2233');
-      poly([[38, 63], [50, 74], [62, 63], [58, 58], [42, 58]], '#c0392b');
-      ell(20, 84, 8, 8, '#f3c9a0'); ell(80, 84, 8, 8, '#f3c9a0');
-      ell(50, 42, 18, 20, '#f3c9a0');
-      poly([[31, 34], [33, 44], [36, 30]], '#3a2a2e'); poly([[69, 34], [67, 44], [64, 30]], '#3a2a2e');
-      poly([[31, 36], [26, 20], [36, 25], [37, 9], [46, 19], [52, 5], [57, 19], [67, 10], [65, 25], [75, 21], [69, 36], [62, 28], [50, 31], [38, 28]], '#f08aa0');
-      g.lineWidth = 2;
-      line(37, 40, 46, 41); line(54, 41, 63, 40);
-      line(38, 50, 45, 51); line(55, 51, 62, 50);
-      line(45, 56, 55, 56);
-      for (const x of [42, 58]) { g.beginPath(); g.arc(x, 45, 2.4, 0, 7); g.fillStyle = '#6b3a1e'; g.fill(); }
+      // Hooded figure against a red glow: face lost in the hood's shadow, one cheek catching the light.
+      const line = (x1, y1, x2, y2, c, w) => { g.strokeStyle = c; g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); };
+      const glow = g.createRadialGradient(50, 50, 8, 50, 50, 50);
+      glow.addColorStop(0, '#e60a0a'); glow.addColorStop(0.75, '#8a0c0ccc'); glow.addColorStop(1, '#8a0c0c00');
+      g.fillStyle = glow; g.fillRect(0, 0, 100, 100);
+      g.strokeStyle = '#000'; g.lineWidth = 2.5;
+      poly([[2, 100], [10, 80], [30, 68], [70, 68], [90, 80], [98, 100]], '#1c1c1b');
+      g.beginPath(); g.moveTo(24, 76);
+      g.bezierCurveTo(8, 52, 20, 6, 52, 3); g.bezierCurveTo(82, 6, 92, 50, 77, 76);
+      g.closePath(); g.fillStyle = '#272725'; g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(30, 60); g.bezierCurveTo(16, 40, 30, 12, 50, 8);
+      g.bezierCurveTo(40, 22, 40, 36, 46, 46); g.closePath(); g.fillStyle = '#161615'; g.fill();
+      g.beginPath(); g.ellipse(51, 57, 23, 16, 0, 0, 7); g.fillStyle = '#050505'; g.fill(); g.stroke();
+      g.lineWidth = 1.5;
+      poly([[36, 54], [66, 54], [63, 64], [55, 73], [46, 73], [38, 64]], '#5b3b28');
+      poly([[52, 54], [66, 54], [63, 64], [56, 68], [53, 62]], '#e9a468');
+      g.beginPath(); g.moveTo(28, 56); g.bezierCurveTo(36, 44, 66, 44, 74, 56);
+      g.bezierCurveTo(64, 53, 40, 53, 28, 56); g.fillStyle = '#050505'; g.fill();
+      poly([[49, 53], [52, 53], [53, 62], [48, 63]], '#050505');
+      line(43, 67, 57, 66, '#050505', 1.6);
+      line(32, 30, 60, 16, '#3a3a37', 1.2); line(70, 22, 76, 50, '#111', 1.4); line(26, 44, 30, 62, '#111', 1.4);
+      line(50, 77, 50, 100, '#050505', 5); line(50, 78, 50, 100, '#8d8d8d', 2);
+      line(58, 77, 58, 90, '#c2553f', 1.8);
       return;
     }
     let eyes, top;
