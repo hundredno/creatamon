@@ -215,8 +215,8 @@
     const html = S.party.map((c, i) =>
       `<button data-idx="${i}" style="border-left-color:${ELEMENTS[c.element].color}" ${c.hp <= 0 || c === B.me ? 'disabled' : ''}>
         <b>${esc(c.name)}</b> Lv ${c.level}<small>${c.hp} / ${CM.maxHp(c)} HP</small></button>`).join('')
-      + (forced ? '' : '<button data-back="1"><b>Back</b></button>');
-    const d = await pickButton(html);
+      ;
+    const d = await pickButton(`<div class="moves">${html}</div>${forced ? '' : '<div class="side"><button data-back="1"><b>Back</b></button></div>'}`);
     return d.back ? null : +d.idx;
   }
   async function chooseAction(isTrainer) {
@@ -227,9 +227,9 @@
           <b>${m.name}</b><small>${CM.cardDesc(m)}</small></button>`;
       }).join('');
       const canSwitch = S.party.some((c) => c.hp > 0 && c !== B.me);
-      const d = await pickButton(`${moves}
+      const d = await pickButton(`<div class="moves">${moves}</div><div class="side">
         <button data-act="switch" ${canSwitch ? '' : 'disabled'}><b>Switch</b><small>Swap Creatamon</small></button>
-        <button data-act="run"><b>Run</b><small>Flee the battle</small></button>`);
+        <button data-act="run"><b>Run</b><small>Flee the battle</small></button></div>`);
       if (d.move) return { type: 'move', move: d.move };
       if (d.act === 'switch') {
         const idx = await chooseParty(false);
@@ -358,62 +358,148 @@
     $menu.querySelectorAll('[data-sprite]').forEach((cv) => drawCreature(cv, S.party[cv.dataset.sprite], false));
   }
 
+  const GRID = 32;
+  const PALETTE = ['#1c1c28', '#ffffff', '#9a9a9a', '#e0483c', '#f47a45', '#f6d643', '#72cc5c', '#2f7a2c',
+    '#55a8ee', '#1f5f9e', '#9b3fd6', '#f08aa0', '#f3c9a0', '#8a5a2b'];
+  const isEgg = (c) => c.name.trim() === CM.EGG.name;
+  // Secret cards come and go with the name; they never touch the card collection.
+  function syncEgg(draft) {
+    draft.moves = draft.moves.filter((id) => CARDS[id].tier !== 4);
+    if (isEgg(draft)) draft.moves.push(...CM.EGG.moves);
+  }
+
   function openForge(idx) {
     const src = idx == null ? null : S.party[idx];
+    const pix = document.createElement('canvas');
+    pix.width = pix.height = GRID;
     forge = {
-      idx,
+      idx, pix,
       avail: { ...S.cards },
+      drawMode: !!(src && src.art), tool: 'pen', color: PALETTE[0],
       draft: src
         ? { name: src.name, element: src.element, shape: src.shape, moves: [...src.moves], hpCards: [...src.hpCards] }
         : { name: '', element: 'Normal', shape: 'Blob', moves: [], hpCards: [] },
     };
+    if (src && src.art) {
+      const im = new Image();
+      im.onload = () => { pix.getContext('2d').drawImage(im, 0, 0); if (forge && forge.pix === pix) paintPreview(); };
+      im.src = src.art;
+    }
     renderMenu();
+  }
+
+  const forgeLevel = () => (forge.idx == null ? 1 : S.party[forge.idx].level);
+  const drawingNow = () => forge.drawMode && !isEgg(forge.draft);
+  function paintPreview() {
+    const cv = $('preview');
+    if (!cv) return;
+    if (!drawingNow()) return drawCreature(cv, { ...forge.draft, name: forge.draft.name.trim(), level: forgeLevel(), art: null }, false);
+    const g = cv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(forge.pix, 0, 0, cv.width, cv.height);
+  }
+  function floodFill(g, x, y, hex) {
+    const img = g.getImageData(0, 0, GRID, GRID), p = img.data;
+    const to = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).concat(255);
+    const start = (y * GRID + x) * 4, from = [...p.slice(start, start + 4)];
+    if (from.every((v, i) => v === to[i])) return;
+    const stack = [[x, y]];
+    while (stack.length) {
+      const [cx, cy] = stack.pop();
+      if (cx < 0 || cy < 0 || cx >= GRID || cy >= GRID) continue;
+      const i = (cy * GRID + cx) * 4;
+      if (!from.every((v, k) => p[i + k] === v)) continue;
+      to.forEach((v, k) => { p[i + k] = v; });
+      stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+    }
+    g.putImageData(img, 0, 0);
+  }
+  function stroke(e) {
+    const cv = e.currentTarget, g = forge.pix.getContext('2d');
+    const x = Math.floor(e.offsetX / cv.clientWidth * GRID), y = Math.floor(e.offsetY / cv.clientHeight * GRID);
+    if (x < 0 || y < 0 || x >= GRID || y >= GRID) return;
+    if (forge.tool === 'erase') g.clearRect(x, y, 1, 1);
+    else if (forge.tool === 'fill') floodFill(g, x, y, forge.color);
+    else { g.fillStyle = forge.color; g.fillRect(x, y, 1, 1); }
+    paintPreview();
   }
 
   function renderForge() {
     const { draft, avail, idx } = forge;
-    const level = idx == null ? 1 : S.party[idx].level;
-    const preview = { ...draft, level };
+    const egg = isEgg(draft);
+    const preview = { ...draft, level: forgeLevel() };
     const st = CM.stats(preview);
-    const slots = (list, max, kind) => list.map((id, i) => cardHTML(id, 1, `data-un="${kind}" data-i="${i}" title="Click to remove"`)).join('')
-      + '<div class="slot">empty slot</div>'.repeat(max - list.length);
+    const slots = (list, kind) => list.map((id, i) => (CARDS[id].tier === 4
+      ? cardHTML(id, 1, 'title="Bound to this Creatamon"', 'div')
+      : cardHTML(id, 1, `data-un="${kind}" data-i="${i}" title="Click to remove"`))).join('')
+      + '<div class="slot">no limit,<br>add more below</div>';
     const pick = (attr, names, cur, hint) => names.map((n) =>
       `<button class="plain ${n === cur ? 'on' : ''}" data-${attr}="${n}" title="${hint(n)}">${n}</button>`).join('');
+    const tools = !forge.drawMode ? '' : `
+      <div class="palette">${PALETTE.map((c) => `<button data-color="${c}" class="${c === forge.color ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div>
+      <div class="pick">${pick('tool', ['pen', 'fill', 'erase'], forge.tool, () => 'Tool')}<button class="plain" data-a="clearart">clear</button></div>
+      <small class="empty">Draw it facing left.</small>`;
+    const look = egg ? '<small class="secret">✦ A cursed presence answers to that name...</small>' : `
+      <div class="pick">
+        <button class="plain ${forge.drawMode ? '' : 'on'}" data-look="auto">Auto look</button>
+        <button class="plain ${forge.drawMode ? 'on' : ''}" data-look="draw">Draw my own</button>
+      </div>${tools}`;
     const ids = sortedCards(avail);
     $menu.innerHTML = `
       <header><h2>The Forge · ${idx == null ? 'new Creatamon' : 'rebuild'}</h2><button data-a="cancel">Cancel</button></header>
       <div class="forge">
         <div class="left">
-          <canvas id="preview" width="160" height="160"></canvas>
+          <canvas id="preview" width="160" height="160" class="${drawingNow() ? 'drawing' : ''}"></canvas>
+          ${look}
           <input id="fname" maxlength="12" placeholder="Name it..." value="${esc(draft.name)}">
-          <div class="pick">${pick('el', Object.keys(ELEMENTS), draft.element, () => 'Element')}</div>
+          <div class="pick">${pick('el', Object.keys(ELEMENTS).filter((n) => !ELEMENTS[n].hidden), draft.element, () => 'Element')}</div>
           <div class="pick">${pick('shape', Object.keys(SHAPES), draft.shape, (n) => SHAPES[n].hint)}</div>
           <div class="statline"><b>${CM.maxHp(preview)} HP</b> · ATK ${st.atk} · DEF ${st.def} · SPD ${st.spd}<br>${SHAPES[draft.shape].hint}. Same-element moves hit 25% harder.</div>
           <button class="plain primary" data-a="save" ${draft.moves.length ? '' : 'disabled'}>${idx == null ? 'Create!' : 'Save changes'}</button>
           ${draft.moves.length ? '' : '<small class="empty">Needs at least one move card.</small>'}
         </div>
         <div class="right">
-          <h3>Moves (${draft.moves.length}/${CM.MAX_MOVES})</h3>
-          <div class="cards">${slots(draft.moves, CM.MAX_MOVES, 'moves')}</div>
-          <h3>Health (${draft.hpCards.length}/${CM.MAX_HP_CARDS})</h3>
-          <div class="cards">${slots(draft.hpCards, CM.MAX_HP_CARDS, 'hpCards')}</div>
+          <h3>Moves (${draft.moves.length})</h3>
+          <div class="cards">${slots(draft.moves, 'moves')}</div>
+          <h3>Health (${draft.hpCards.length})</h3>
+          <div class="cards">${slots(draft.hpCards, 'hpCards')}</div>
           <h3>Your Power Cards · click to slot</h3>
           <div class="cards">${ids.map((id) => cardHTML(id, avail[id], `data-add="${id}"`)).join('') || '<p class="empty">No unused cards.</p>'}</div>
         </div>
       </div>`;
-    drawCreature($('preview'), preview, false);
-    $('fname').oninput = (e) => { draft.name = e.target.value; };
+    paintPreview();
+    const cv = $('preview');
+    cv.onpointerdown = (e) => {
+      if (!drawingNow()) return;
+      cv.setPointerCapture(e.pointerId);
+      stroke(e);
+      if (forge.tool !== 'fill') cv.onpointermove = stroke;
+    };
+    cv.onpointerup = cv.onpointercancel = () => { cv.onpointermove = null; };
+    $('fname').oninput = (e) => {
+      const was = isEgg(draft);
+      draft.name = e.target.value;
+      if (isEgg(draft) === was) return;
+      syncEgg(draft);
+      renderForge();
+      $('fname').focus();
+      $('fname').setSelectionRange(draft.name.length, draft.name.length);
+    };
   }
 
   function saveForge() {
-    const { draft, avail, idx } = forge;
+    const { draft, avail, idx, pix } = forge;
     const name = draft.name.trim() || `${draft.element === 'Normal' ? 'Plain' : draft.element}${draft.shape.toLowerCase()}`.slice(0, 12);
+    const drawn = forge.drawMode && pix.getContext('2d').getImageData(0, 0, GRID, GRID).data.some((v, i) => i % 4 === 3 && v);
+    const art = drawn ? pix.toDataURL() : null;
     if (idx == null) {
-      S.party.push(CM.create({ ...draft, name }));
+      S.party.push(CM.create({ ...draft, name, art }));
     } else {
       const c = S.party[idx];
       const before = CM.maxHp(c);
-      Object.assign(c, { name, element: draft.element, shape: draft.shape, moves: draft.moves, hpCards: draft.hpCards });
+      Object.assign(c, { name, art, element: draft.element, shape: draft.shape, moves: draft.moves, hpCards: draft.hpCards });
       const after = CM.maxHp(c);
       c.hp = Math.min(after, c.hp + Math.max(0, after - before));
     }
@@ -424,19 +510,22 @@
   }
 
   $menu.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un]');
+    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool]');
     if (!b || b.disabled) return;
     const d = b.dataset;
     if (forge) {
       const { draft, avail } = forge;
       if (d.a === 'cancel') forge = null;
       else if (d.a === 'save') return saveForge();
+      else if (d.a === 'clearart') forge.pix.getContext('2d').clearRect(0, 0, GRID, GRID);
+      else if (d.look) forge.drawMode = d.look === 'draw';
+      else if (d.color) { forge.color = d.color; if (forge.tool === 'erase') forge.tool = 'pen'; }
+      else if (d.tool) forge.tool = d.tool;
       else if (d.el) draft.element = d.el;
       else if (d.shape) draft.shape = d.shape;
       else if (d.add) {
         const isHp = CARDS[d.add].kind === 'hp';
         const list = isHp ? draft.hpCards : draft.moves;
-        if (list.length >= (isHp ? CM.MAX_HP_CARDS : CM.MAX_MOVES)) return;
         if (!isHp && list.includes(d.add)) return;
         list.push(d.add);
         avail[d.add]--;
@@ -453,7 +542,7 @@
     if (d.a === 'dismantle') {
       const c = S.party[+d.i];
       if (!confirm(`Dismantle ${c.name}? Its Power Cards return to you, but its levels are lost.`)) return;
-      [...c.moves, ...c.hpCards].forEach((id) => addCard(id));
+      [...c.moves, ...c.hpCards].filter((id) => CARDS[id].tier !== 4).forEach((id) => addCard(id));
       S.party.splice(+d.i, 1);
     }
     save();
@@ -462,19 +551,58 @@
 
   // ---------- Drawing ----------
   // Sprites are drawn in a 100x100 box facing left; flip makes them face right.
+  // The easter egg uses img/modulo-yuji.png when that file exists, else a drawn stand-in.
+  const eggImg = new Image();
+  eggImg.src = 'img/modulo-yuji.png';
+  const artCache = new Map();
+  function artImage(src, onLoad) {
+    let im = artCache.get(src);
+    if (!im) { im = new Image(); im.src = src; artCache.set(src, im); }
+    if (!im.complete) im.addEventListener('load', onLoad, { once: true });
+    return im;
+  }
+
   function drawCreature(cv, c, flip) {
     const g = cv.getContext('2d'), s = cv.width / 100;
+    cv.shown = c;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, cv.width, cv.height);
+    const egg = c.name === CM.EGG.name;
+    const im = egg ? (eggImg.naturalWidth ? eggImg : null)
+      : c.art ? artImage(c.art, () => { if (cv.shown === c) drawCreature(cv, c, flip); }) : null;
+    if (im) {
+      if (!im.naturalWidth) return;
+      g.imageSmoothingEnabled = egg;
+      g.setTransform(flip ? -1 : 1, 0, 0, 1, flip ? cv.width : 0, 0);
+      const k = Math.min(cv.width / im.naturalWidth, cv.height / im.naturalHeight);
+      const w = im.naturalWidth * k, h = im.naturalHeight * k;
+      g.drawImage(im, (cv.width - w) / 2, cv.height - h, w, h);
+      return;
+    }
     g.setTransform(flip ? -s : s, 0, 0, s, flip ? cv.width : 0, 0);
     const { color, dark } = ELEMENTS[c.element];
-    g.lineWidth = 3; g.lineJoin = 'round'; g.strokeStyle = dark;
+    g.lineWidth = 3; g.lineJoin = 'round'; g.strokeStyle = egg ? '#1c1c28' : dark;
     const ell = (x, y, rx, ry, fill) => { g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, 7); g.fillStyle = fill; g.fill(); g.stroke(); };
     const poly = (pts, fill) => {
       g.beginPath();
       pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
       g.closePath(); g.fillStyle = fill; g.fill(); g.stroke();
     };
+    if (egg) {
+      const line = (x1, y1, x2, y2) => { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); };
+      poly([[24, 99], [27, 72], [40, 62], [60, 62], [73, 72], [76, 99]], '#1d2233');
+      poly([[38, 63], [50, 74], [62, 63], [58, 58], [42, 58]], '#c0392b');
+      ell(20, 84, 8, 8, '#f3c9a0'); ell(80, 84, 8, 8, '#f3c9a0');
+      ell(50, 42, 18, 20, '#f3c9a0');
+      poly([[31, 34], [33, 44], [36, 30]], '#3a2a2e'); poly([[69, 34], [67, 44], [64, 30]], '#3a2a2e');
+      poly([[31, 36], [26, 20], [36, 25], [37, 9], [46, 19], [52, 5], [57, 19], [67, 10], [65, 25], [75, 21], [69, 36], [62, 28], [50, 31], [38, 28]], '#f08aa0');
+      g.lineWidth = 2;
+      line(37, 40, 46, 41); line(54, 41, 63, 40);
+      line(38, 50, 45, 51); line(55, 51, 62, 50);
+      line(45, 56, 55, 56);
+      for (const x of [42, 58]) { g.beginPath(); g.arc(x, 45, 2.4, 0, 7); g.fillStyle = '#6b3a1e'; g.fill(); }
+      return;
+    }
     let eyes, top;
     if (c.shape === 'Beast') {
       poly([[80, 62], [97, 46], [90, 68]], color);

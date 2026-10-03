@@ -16,7 +16,8 @@ Open `index.html` in a browser. No build step, no dependencies. Progress saves a
 
 ## Power Cards
 
-Every Creatamon is built from cards: up to 4 move cards and 3 health cards, plus a free choice of element and body.
+Every Creatamon is built from cards: as many move and health cards as you like, plus a free choice of element and body.
+You can keep the generated look or pick **Draw my own** in the Forge and paint a 32x32 sprite.
 
 | Tier | Examples |
 | --- | --- |

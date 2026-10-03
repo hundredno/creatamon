@@ -7,14 +7,16 @@ const CM = (() => {
     Grass: { color: '#72cc5c', dark: '#2f7a2c' },
     Electric: { color: '#f6d643', dark: '#a08312' },
     Rock: { color: '#b39474', dark: '#6a5038' },
+    // Not selectable in the Forge; only the secret cards use it.
+    Cursed: { color: '#9b3fd6', dark: '#3d0f5e', hidden: true },
   };
   const STRONG = {
     Normal: [], Fire: ['Grass'], Water: ['Fire', 'Rock'], Grass: ['Water', 'Rock'],
-    Electric: ['Water'], Rock: ['Fire', 'Electric'],
+    Electric: ['Water'], Rock: ['Fire', 'Electric'], Cursed: [],
   };
   const WEAK = {
     Normal: [], Fire: ['Fire', 'Water', 'Rock'], Water: ['Water', 'Grass'], Grass: ['Grass', 'Fire'],
-    Electric: ['Electric', 'Grass', 'Rock'], Rock: ['Rock', 'Grass'],
+    Electric: ['Electric', 'Grass', 'Rock'], Rock: ['Rock', 'Grass'], Cursed: [],
   };
   const effectiveness = (att, def) => (STRONG[att].includes(def) ? 2 : WEAK[att].includes(def) ? 0.5 : 1);
 
@@ -25,7 +27,7 @@ const CM = (() => {
     Shell: { atk: 8, def: 13, spd: 7, hint: 'Tough' },
   };
 
-  const TIER_NAMES = { 1: 'Common', 2: 'Rare', 3: 'Epic' };
+  const TIER_NAMES = { 1: 'Common', 2: 'Rare', 3: 'Epic', 4: 'Secret' };
   const mv = (name, tier, element, power, acc = 100) => ({ kind: 'move', name, tier, element, power, acc });
   const hp = (name, tier, amount) => ({ kind: 'hp', name, tier, amount });
   const CARDS = {
@@ -55,13 +57,25 @@ const CM = (() => {
     solar_bloom: mv('Solar Bloom', 3, 'Grass', 110, 85),
     hyper_burst: mv('Hyper Burst', 3, 'Normal', 120, 80),
     hp250: hp('Titan Heart', 3, 250),
+    // Secret (tier 4): never dropped, bound to the easter-egg Creatamon
+    divergent_fist: mv('Divergent Fist', 4, 'Cursed', 70),
+    dismantle: mv('Dismantle', 4, 'Cursed', 90),
+    piercing_blood: mv('Piercing Blood', 4, 'Cursed', 105, 95),
+    cleave: mv('Cleave', 4, 'Cursed', 130, 85),
+    black_flash: mv('Black Flash', 4, 'Cursed', 160, 70),
+    reverse_cursed: { kind: 'move', name: 'Reverse Cursed Technique', tier: 4, element: 'Cursed', power: 0, acc: 100, heal: 0.6 },
+  };
+  // Naming a Creatamon exactly this unlocks a special look and the secret cards.
+  const EGG = {
+    name: 'Modulo Yuji',
+    moves: ['divergent_fist', 'dismantle', 'piercing_blood', 'cleave', 'black_flash', 'reverse_cursed'],
   };
   const cardDesc = (c) =>
     c.kind === 'hp' ? `+${c.amount} max HP`
       : c.heal ? `Restores ${c.heal * 100}% HP`
         : `${c.element} · Pow ${c.power} · Acc ${c.acc}%`;
 
-  const MAX_MOVES = 4, MAX_HP_CARDS = 3, MAX_PARTY = 6, BASE_HP = 50;
+  const MAX_PARTY = 6, BASE_HP = 50;
 
   // ---- Creatures ----
   const maxHp = (c) => BASE_HP + 6 * (c.level - 1) + c.hpCards.reduce((s, id) => s + CARDS[id].amount, 0);
@@ -73,7 +87,7 @@ const CM = (() => {
     const c = {
       name: spec.name, element: spec.element, shape: spec.shape,
       moves: [...spec.moves], hpCards: [...(spec.hpCards || [])],
-      level: spec.level || 1, xp: 0,
+      level: spec.level || 1, xp: 0, art: spec.art || null,
     };
     c.hp = maxHp(c);
     return c;
@@ -263,7 +277,7 @@ const CM = (() => {
   const STARTER_CARDS = ['tackle', 'ember', 'splash_shot', 'leaf_flick', 'hp30', 'hp30'];
 
   return {
-    ELEMENTS, SHAPES, CARDS, TIER_NAMES, MAX_MOVES, MAX_HP_CARDS, MAX_PARTY,
+    ELEMENTS, SHAPES, CARDS, TIER_NAMES, EGG, MAX_PARTY,
     MAP, SOLID, ZONE_OF, START, PROFESSOR, CHESTS, WILD, TRAINERS, STARTER_CARDS,
     effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp,
     useMove, pickMove, genWild, rollDrop,
