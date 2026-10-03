@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Creatamon</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="game">
+    <canvas id="world" width="480" height="352"></canvas>
+    <div id="hud">Arrows / WASD: move &nbsp;·&nbsp; Enter: interact &nbsp;·&nbsp; M: menu &amp; Forge</div>
+
+    <div id="battle" hidden>
+      <div class="info foe">
+        <div><b id="foeName"></b> <span id="foeLv"></span></div>
+        <div class="bar"><i id="foeBar"></i></div>
+      </div>
+      <canvas id="foeSprite" class="sprite" width="180" height="180"></canvas>
+      <canvas id="meSprite" class="sprite" width="180" height="180"></canvas>
+      <div class="info me">
+        <div><b id="meName"></b> <span id="meLv"></span></div>
+        <div class="bar"><i id="meBar"></i></div>
+        <div id="meHp"></div>
+      </div>
+      <div id="actions" hidden></div>
+    </div>
+
+    <div id="dialog" hidden></div>
+    <div id="menu" hidden></div>
+
+    <div id="title">
+      <h1>CREATAMON</h1>
+      <p>Find Power Cards. Forge your own creatures. Battle to the top.</p>
+      <button id="btnContinue" hidden>Continue</button>
+      <button id="btnNew">New Game</button>
+    </div>
+  </div>
+  <script src="js/core.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
