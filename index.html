@@ -8,35 +8,43 @@
 </head>
 <body>
   <div id="game">
-    <canvas id="world" width="480" height="352"></canvas>
-    <div id="hud">Arrows / WASD: move &nbsp;·&nbsp; Enter: interact &nbsp;·&nbsp; M: menu &amp; Forge</div>
+    <canvas id="world" width="960" height="704"></canvas>
+    <canvas id="overlay" width="960" height="704"></canvas>
+    <div id="hud"><b id="area"></b> &nbsp;·&nbsp; Arrows / WASD: move &nbsp;·&nbsp; Enter: interact &nbsp;·&nbsp; M: menu</div>
 
     <div id="battle" hidden>
       <div class="info foe">
         <div><b id="foeName"></b> <span id="foeLv"></span></div>
         <div class="bar"><i id="foeBar"></i></div>
       </div>
+      <div class="pad foe"></div>
+      <div class="pad me"></div>
       <canvas id="foeSprite" class="sprite" width="180" height="180"></canvas>
       <canvas id="meSprite" class="sprite" width="180" height="180"></canvas>
       <div class="info me">
         <div><b id="meName"></b> <span id="meLv"></span></div>
         <div class="bar"><i id="meBar"></i></div>
         <div id="meHp"></div>
+        <div class="bar xp"><i id="meXp"></i></div>
       </div>
-      <div id="actions" hidden></div>
+      <canvas id="fx" width="720" height="528"></canvas>
     </div>
+    <div id="actions" hidden></div>
 
     <div id="dialog" hidden></div>
     <div id="menu" hidden></div>
 
     <div id="title">
       <h1>CREATAMON</h1>
-      <p>Find Power Cards. Forge your own creatures. Battle to the top.</p>
+      <p>Forge your own creatures. Solve eight gyms. Take the Champion Cup.</p>
       <button id="btnContinue" hidden>Continue</button>
       <button id="btnNew">New Game</button>
     </div>
   </div>
   <script src="js/core.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/draw.js"></script>
+  <script src="js/gl.js"></script>
   <script src="js/game.js"></script>
 </body>
 </html>

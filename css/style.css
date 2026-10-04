@@ -14,6 +14,9 @@ button { font: inherit; cursor: pointer; }
   box-shadow: 0 0 0 4px #2c2c3c, 0 12px 40px #000a;
 }
 #world { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+#overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#world.shake { animation: shake .4s; }
+@keyframes shake { 20%, 60% { transform: translate(-5px, 3px); } 40%, 80% { transform: translate(5px, -3px); } }
 #hud {
   position: absolute; top: 8px; left: 8px; padding: 3px 9px; border-radius: 12px;
   background: #0008; color: #fff; font-size: 12px;
@@ -32,7 +35,40 @@ button { font: inherit; cursor: pointer; }
 #battle { position: absolute; inset: 0; z-index: 20; background: linear-gradient(#bfe8ff 0 45%, #9ad27a 45%); }
 #battle.z2 { background: linear-gradient(#7fb894 0 45%, #4f8f4a 45%); }
 #battle.z3 { background: linear-gradient(#4b4658 0 45%, #7a7380 45%); }
-.sprite { position: absolute; width: 180px; height: 180px; }
+#battle.z4 { background: linear-gradient(#ffe3ee 0 45%, #a6d977 45%); }
+#battle.z5 { background: linear-gradient(#1f2a44 0 45%, #6f8fa8 45%); }
+#battle.z6 { background: linear-gradient(#bfe8ff 0 45%, #3d8fe0 45%); }
+#battle.z7 { background: linear-gradient(#dbe9f7 0 45%, #f4f9ff 45%); }
+#battle.zin { background: linear-gradient(#3a3a52 0 45%, #cfc7b3 45%); }
+#battle.znight { background: linear-gradient(#1a0414 0 45%, #4a2a4a 45%); }
+#fx { position: absolute; inset: 0; pointer-events: none; }
+/* Max Mode: the Creatamon towers over the field. */
+.sprite.max { width: 270px; height: 270px; filter: drop-shadow(0 0 10px #e0483c) drop-shadow(0 0 22px #ff7ab0); }
+#foeSprite.max { right: 25px; top: -40px; }
+#meSprite.max { left: 25px; }
+/* An open domain swallows the backdrop. */
+#battle.domain {
+  background:
+    radial-gradient(ellipse 34% 20% at 50% 45%, #000 0 60%, #0000 62%),
+    repeating-linear-gradient(90deg, #0000 0 46px, #2a0006 46px 52px),
+    linear-gradient(#3b0008 0 45%, #120003 45%);
+}
+#battle.domain .pad { background: #e60a0a55; }
+#actions .side.three { grid-template-columns: 1fr 1fr; }
+#actions .side.three .wide { grid-column: 1 / -1; }
+#actions .maxbtn { background: linear-gradient(90deg, #ffd9e6, #fff); border-color: #c2255c; border-left-color: #e0483c; }
+/* The attacker leans in while its move plays. */
+.sprite.lunge { animation: none; transition: transform .12s; }
+#meSprite.lunge { transform: translate(26px, -16px); }
+#foeSprite.lunge { transform: translate(-26px, 16px); }
+.sprite { position: absolute; width: 180px; height: 180px; animation: idle 2.4s ease-in-out infinite; }
+#meSprite { animation-delay: -1.2s; }
+@keyframes idle { 50% { transform: translateY(-5px); } }
+.pad { position: absolute; width: 170px; height: 30px; border-radius: 50%; background: #0003; }
+.pad.foe { right: 75px; top: 190px; }
+.pad.me { left: 75px; bottom: 122px; }
+.bar.xp { height: 7px; padding: 1px; margin-top: 3px; }
+.bar.xp i { background: #55a8ee; }
 #foeSprite { right: 70px; top: 30px; }
 #meSprite { left: 70px; bottom: 136px; }
 .sprite.hit { animation: hit .35s; }
@@ -61,16 +97,20 @@ button { font: inherit; cursor: pointer; }
 #actions small { display: block; color: #555; font-size: 12px; }
 #actions b, #actions small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #actions b { display: inline-block; max-width: 100%; vertical-align: bottom; }
+#actions .ask { grid-template-columns: repeat(3, 1fr); grid-auto-rows: auto; align-content: start; }
+#actions .ask p { grid-column: 1 / -1; margin: 2px 4px; font-size: 16px; }
+#actions .ask button { height: 44px; }
 
 /* ---- Menu / Forge ---- */
 #menu { position: absolute; inset: 0; z-index: 40; background: #f1ede0; overflow-y: auto; padding: 14px 18px; }
 #menu header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 #menu h2 { margin: 0; font-size: 22px; }
 #menu h3 { margin: 12px 0 6px; font-size: 15px; text-transform: uppercase; letter-spacing: .05em; color: #555; }
-#menu button.plain, #menu header button {
+#menu button.plain, #menu header button, .filebtn {
   border: 2px solid #3a3a52; border-radius: 7px; background: #fff; padding: 4px 10px;
 }
-#menu button.plain:hover:not(:disabled) { background: #fff3c4; }
+#menu button.plain:hover:not(:disabled), .filebtn:hover { background: #fff3c4; }
+.filebtn { text-align: center; cursor: pointer; }
 #menu button.on { background: #3a3a52; color: #fff; }
 #menu button.primary { background: #e0483c; color: #fff; border-color: #8c231b; font-weight: bold; padding: 8px 14px; }
 #menu button:disabled { opacity: .45; cursor: default; }
@@ -136,3 +176,21 @@ button.card:hover:not(:disabled) { transform: translateY(-2px); }
 .palette button.on { outline: 3px solid #e0483c; }
 .secret { color: #6a1fa0; font-style: italic; }
 .mon canvas, .sprite { image-rendering: auto; }
+
+/* ---- Wardrobe & Creatadex ---- */
+.forge canvas#pprev {
+  width: 144px; height: 160px; image-rendering: pixelated;
+  background: linear-gradient(#bfe8ff 0 62%, #7ec850 62%);
+}
+.swatches { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.swatches button { width: 24px; height: 24px; border: 2px solid #3a3a52; border-radius: 50%; padding: 0; }
+.swatches button.on { outline: 3px solid #e0483c; }
+.dex { display: flex; flex-wrap: wrap; gap: 4px; }
+.dex span { background: #fff; border: 2px solid #3a3a52; border-left-width: 8px; border-radius: 6px; padding: 1px 7px; font-size: 12px; }
+.dex .unseen { color: #999; border-color: #bbb; background: none; }
+
+/* ---- Journey: objective and badges ---- */
+.goal { margin: 0 0 8px; padding: 6px 10px; background: #fff; border: 2px solid #3a3a52; border-left-width: 8px; border-left-color: #e0483c; border-radius: 7px; }
+.badges { display: flex; flex-wrap: wrap; gap: 5px; }
+.badges span { padding: 2px 9px; border: 2px dashed #aaa; border-radius: 12px; font-size: 12px; color: #999; }
+.badges span.won { border: 2px solid #3a3a52; background: var(--c); color: #1c1c28; font-weight: bold; }
