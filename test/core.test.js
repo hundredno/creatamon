@@ -21,7 +21,8 @@ Object.values(SPECIES).forEach((s) => {
 const rewards = [...CM.STARTER_CARDS, ...GYMS.flatMap((g) => g.reward), ...NPCS.flatMap((n) => n.reward || []),
   ...CHESTS.filter((c) => c.card).map((c) => c.card)];
 rewards.forEach((id) => assert.ok(CARDS[id], `unknown card ${id}`));
-CHESTS.forEach((c) => assert.ok(!c.card !== !c.outfit, `chest at ${c.x},${c.y} needs a card or an outfit`));
+CHESTS.forEach((c) => assert.strictEqual([c.card, c.outfit, c.item, c.spray].filter(Boolean).length, 1, `pickup at ${c.x},${c.y} needs exactly one thing in it`));
+CHESTS.filter((c) => c.item).forEach((c) => assert.ok(CM.ITEMS[c.item], `unknown item ${c.item}`));
 const outfits = [...CHESTS.filter((c) => c.outfit).map((c) => c.outfit), ...NPCS.flatMap((n) => n.outfit || [])];
 outfits.forEach((id) => assert.ok(CM.CLOTHES[id] && CM.CLOTHES[id].locked, `bad outfit ${id}`));
 assert.strictEqual(new Set(CHESTS.map((c) => `${c.map}:${c.x},${c.y}`)).size, CHESTS.length, 'duplicate chest position');
@@ -51,6 +52,21 @@ assert.ok(CM.spawn('Fluffin', 40).moves.includes('hyper_burst'), 'high-level spa
 const yuji = (element, shape) => CM.create({ name: 'Modulo Yuji', element, shape, moves: ['cleave'], hpCards: ['hp250'] });
 assert.ok(CM.isEgg(yuji('Shadow', 'Beast')) && !CM.isEgg(yuji('Fire', 'Beast')) && !CM.isEgg(yuji('Shadow', 'Blob')));
 // Its infinity: the attacker takes 100 and it takes nothing (when the roll lands).
+// Held items and evolution.
+const fist = CM.spawn('Emberpup', 20), plain = CM.spawn('Emberpup', 20), dummy = () => CM.spawn('Boulderon', 20);
+fist.item = 'gloves';
+assert.ok(CM.useMove(fist, dummy(), CARDS.tackle, () => 0.5).dmg > CM.useMove(plain, dummy(), CARDS.tackle, () => 0.5).dmg, 'gloves add damage');
+const guarded = dummy(); guarded.item = 'shield';
+assert.deepStrictEqual(CM.useMove(plain, guarded, CARDS.tackle, () => 0.2), { blocked: true });
+assert.strictEqual(guarded.hp, CM.maxHp(guarded));
+const kid = CM.create({ name: 'K', element: 'Fire', shape: 'Blob', moves: ['ember'], level: 16 }), kidHp = CM.maxHp(kid);
+const kidDmg = CM.useMove(kid, dummy(), CARDS.ember, () => 0.5).dmg;
+assert.ok(CM.canEvolve(kid)); CM.evolve(kid);
+assert.ok(CM.maxHp(kid) === kidHp + 60 && kid.hp === CM.maxHp(kid) && !CM.canEvolve(kid), 'evolving builds in health');
+assert.ok(CM.useMove(kid, dummy(), CARDS.ember, () => 0.5).dmg > kidDmg, 'evolved attacks hit harder');
+// Trainers' Creatamon carry nicknames and keep their species for the Creatadex.
+CM.makeTeam('Finn', CM.TEAMS.finn2).forEach((c) => assert.ok(SPECIES[c.species] && CM.NICKS.includes(c.name) && c.sketch));
+
 const egg = yuji('Shadow', 'Beast'), bully = CM.spawn('Regalion', 40), before = bully.hp;
 assert.deepStrictEqual(CM.useMove(bully, egg, CARDS.body_slam, () => 0.5), { infinity: 100 });
 assert.ok(egg.hp === CM.maxHp(egg) && bully.hp === before - 100);
@@ -103,7 +119,8 @@ function solve(id) {
       const P = clone();
       const res = CM.step(id, P, S, st.x, st.y, dir, blocked);
       if (!res || CM.arrive(id, P, res.x, res.y) === 'shock') continue;
-      stack.push({ x: res.x, y: res.y, P, n: st.n + 1 });
+      const [tx, ty] = CM.teleAt(id, res.x, res.y) || [res.x, res.y];
+      stack.push({ x: tx, y: ty, P, n: st.n + 1 });
     }
     m.fires.forEach((fk, i) => {
       const [fx, fy] = fk.split(',').map(Number);
@@ -127,7 +144,7 @@ GYMS.forEach((g) => {
     const [x, y] = queue.shift();
     for (const [dx, dy] of Object.values(CM.DIRS)) {
       const nx = x + dx, ny = y + dy;
-      if (seen.has(key(nx, ny)) || CM.charAt(id, nx, ny) === 'i' || !CM.passable(id, nx, ny, P, S) || P.blocks[key(nx, ny)]) continue;
+      if (seen.has(key(nx, ny)) || 'i<>AV'.includes(CM.charAt(id, nx, ny)) || !CM.passable(id, nx, ny, P, S) || P.blocks[key(nx, ny)]) continue;
       seen.add(key(nx, ny));
       queue.push([nx, ny]);
     }
@@ -141,13 +158,13 @@ GYMS.forEach((g) => {
 });
 
 // ---------- The whole story can be walked ----------
-const newS = () => ({ map: 'world', f: { start: true }, badges: {}, smashed: {}, solved: {}, quiz: 0, surf: false, chests: {} });
+const newS = () => ({ map: 'world', f: { start: true }, badges: {}, smashed: {}, solved: {}, quiz: 0, surf: false, chests: {}, beaten: all });
 // Everything reachable from home across all maps, with puzzles treated as solved.
 function reach(S, surf) {
   const seen = new Set(), queue = [['world', CM.START.x, CM.START.y]];
   const P = {};
   const Sx = { ...S, surf };
-  const there = new Set([...CHESTS, ...NPCS.filter((n) => !n.show || n.show(S))].map((e) => `${e.map}:${e.x},${e.y}`));
+  const there = new Set(NPCS.filter((n) => !n.show || n.show(S)).map((e) => `${e.map}:${e.x},${e.y}`));
   const solid = (id, x, y) => there.has(`${id}:${x},${y}`);
   seen.add(`world:${CM.START.x},${CM.START.y}`);
   while (queue.length) {
@@ -157,6 +174,8 @@ function reach(S, surf) {
     const warp = CM.WARPS[`${id}:${x},${y}`];
     if (warp) { push(warp.map, ...MAPS[warp.map].entry); continue; }
     if (CM.charAt(id, x, y) === 'E') { push(...MAPS[id].out); continue; }
+    const twin = CM.teleAt(id, x, y);
+    if (twin) push(id, ...twin);
     for (const [dx, dy] of Object.values(CM.DIRS)) {
       const nx = x + dx, ny = y + dy;
       const w = CM.WARPS[`${id}:${nx},${ny}`];
@@ -183,16 +202,19 @@ const stages = [
   ['leader_Water', () => { S.badges.Water = true; }],
   ['nettie_kiln', () => { S.f.nettie1 = true; }],
   ['leader_Fire', () => { S.badges.Fire = true; }],
+  ['leader_Wind', () => { S.badges.Wind = true; }],
   ['leader_Rock', () => { S.badges.Rock = true; }],
   ['cyril_mural', () => { S.f.mural = true; }],
   ['leader_Electric', () => { S.badges.Electric = true; }],
+  ['leader_Metal', () => { S.badges.Metal = true; }],
   ['finn_r7', () => { S.f.rival3 = true; }],
   ['leader_Ice', () => { S.badges.Ice = true; }],
   ['wren_bath', () => { S.f.surf = true; }],
   ['holler_gate', () => { S.f.holler = true; }, () => { surf = true; }],
   ['nettie_thorn', () => { S.f.nettie2 = true; }],
   ['leader_Shadow', () => { S.badges.Shadow = true; }],
-  ['quiz1', () => { S.quiz = 3; }],
+  ['leader_Mind', () => { S.badges.Mind = true; }],
+  ['quiz1', () => { S.quiz = 5; }],
   ['leader_Normal', () => { S.badges.Normal = true; }],
   ['registrar', () => { S.f.semis = true; }],
   ['opaline', () => { S.f.opaline = true; }],
@@ -203,8 +225,8 @@ const stages = [
   ['registrar', () => { S.f.champion = true; }],
 ];
 // The next few story beats must be out of reach until the current one is done.
-const LOCKED_AHEAD = ['leader_Grass', 'leader_Water', 'leader_Fire', 'leader_Rock', 'leader_Electric', 'leader_Ice',
-  'leader_Shadow', 'leader_Normal', 'registrar', 'sterling'];
+const LOCKED_AHEAD = ['leader_Grass', 'leader_Water', 'leader_Fire', 'leader_Wind', 'leader_Rock', 'leader_Electric', 'leader_Metal',
+  'leader_Ice', 'leader_Shadow', 'leader_Mind', 'leader_Normal', 'registrar', 'sterling'];
 stages.forEach(([id, done, before], i) => {
   const met = stages.slice(0, i + 1).map((st) => st[0]);
   const later = stages.slice(i + 1).map((st) => st[0]).filter((n) => LOCKED_AHEAD.includes(n) && !met.includes(n));
@@ -218,7 +240,7 @@ stages.forEach(([id, done, before], i) => {
 const end = reach(S, true);
 CHESTS.forEach((c) => {
   assert.ok(!'#^TRGWMI '.includes(CM.charAt(c.map, c.x, c.y)), `chest in a wall at ${c.x},${c.y}`);
-  assert.ok(touch(end, c.map, c.x, c.y), `chest unreachable at ${c.x},${c.y}`);
+  assert.ok(end.has(`${c.map}:${c.x},${c.y}`), `pickup unreachable at ${c.x},${c.y}`);
 });
 NPCS.filter((n) => n.team).forEach((n) => assert.ok(touch(end, n.map, n.x, n.y), `${n.name} unreachable`));
 // Every wild habitat appears somewhere with a level range.

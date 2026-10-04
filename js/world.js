@@ -12,7 +12,9 @@
   // Indoors: F floor  I wall  E exit mat  L leader's spot  g gate (opens when the puzzle is solved)
   //   o Fluffin to herd  p pen  O boulder  v pit  i ice  k ice rock  z floor panel  t seal
   //   1 2 3 valves  r y u gates that start shut  q j n gates that start open  B brazier  l lava
+  //   < > A V gusts that blow you along  C crate  P pressure plate  4-9 warp pads (each digit is a pair)
   const SOLID = '#^TRGWMIlBk ';
+  const GUSTS = { '<': 'left', '>': 'right', A: 'up', V: 'down' };
   // gate char -> [valve, starts open]
   const GATE = { r: ['1', 0], y: ['2', 0], u: ['3', 0], q: ['1', 1], j: ['2', 1], n: ['3', 1] };
   // Past the edge of the overworld is more forest; past the edge of a room is nothing.
@@ -43,7 +45,7 @@
     const m = MAPS[id];
     const P = { blocks: {}, fill: {}, sw: {}, lit: {}, fire: m.fire0.slice(), solved: done };
     if (done) {
-      m.targets.forEach((k) => { P.blocks[k] = 'o'; });
+      m.targets.forEach((k) => { P.blocks[k] = charAt(id, ...k.split(',').map(Number)) === 'P' ? 'C' : 'o'; });
       m.pits.forEach((k) => { P.fill[k] = true; });
       m.marks.forEach((k) => { P.lit[k] = true; });
       P.fire = P.fire.map(() => true);
@@ -69,16 +71,29 @@
     if (P.blocks[k]) {
       const bx = nx + dx, by = ny + dy, bk = `${bx},${by}`, bch = charAt(id, bx, by);
       const pit = bch === 'v' && !P.fill[bk];
-      if (!'FpoOv'.includes(bch) || blocked(bx, by) || (!pit && !free(bx, by))) return null;
+      if (!'FpPoOCv'.includes(bch) || blocked(bx, by) || (!pit && !free(bx, by))) return null;
       const kind = P.blocks[k];
       delete P.blocks[k];
       if (pit) P.fill[bk] = true; else P.blocks[bk] = kind;
-      return { x: nx, y: ny, n: 1, pushed: true };
+      return { x: nx, y: ny, n: 1, path: [[nx, ny]], pushed: true };
     }
     if (!free(nx, ny)) return null;
-    let n = 1;
-    while (charAt(id, nx, ny) === 'i' && free(nx + dx, ny + dy)) { nx += dx; ny += dy; n++; }
-    return { x: nx, y: ny, n };
+    // Ice carries you on the way you were going; a gust blows you its own way. path lists every tile crossed.
+    const path = [[nx, ny]];
+    let d = [dx, dy];
+    for (let i = 0; i < 200; i++) {
+      const ch = charAt(id, nx, ny);
+      if (GUSTS[ch]) d = DIRS[GUSTS[ch]]; else if (ch !== 'i') break;
+      if (!free(nx + d[0], ny + d[1])) break;
+      nx += d[0]; ny += d[1];
+      path.push([nx, ny]);
+    }
+    return { x: nx, y: ny, n: path.length, path };
+  };
+  // Standing on a warp pad sends you to its twin. Returns the twin's spot, or null.
+  const teleAt = (id, x, y) => {
+    const pads = MAPS[id].pads[charAt(id, x, y)];
+    return pads ? pads.find((p) => p[0] !== x || p[1] !== y) : null;
   };
   // Called after landing on a tile. Returns 'switch' | 'shock' | 'lit' | 'solved' | null.
   const arrive = (id, P, x, y) => {
@@ -100,16 +115,17 @@
 
   // ---------- Interiors ----------
   const interior = (id, name, rows, meta = {}) => {
-    const m = { id, name, rows, puzzle: null, fire0: [], targets: [], marks: [], pits: [], fires: [], blocks: {}, ...meta };
+    const m = { id, name, rows, puzzle: null, fire0: [], targets: [], marks: [], pits: [], fires: [], blocks: {}, pads: {}, ...meta };
     rows.forEach((row, y) => [...row].forEach((ch, x) => {
       const k = `${x},${y}`;
       if (ch === 'E') { m.exit = [x, y]; m.entry = [x, y - 1]; }
       if (ch === 'L') m.leader = [x, y];
-      if (ch === 'p') m.targets.push(k);
+      if (ch === 'p' || ch === 'P') m.targets.push(k);
+      if ('456789'.includes(ch)) (m.pads[ch] = m.pads[ch] || []).push([x, y]);
       if (ch === 'z' || ch === 't') m.marks.push(k);
       if (ch === 'v') m.pits.push(k);
       if (ch === 'B') m.fires.push(k);
-      if (ch === 'o' || ch === 'O') m.blocks[k] = ch;
+      if ('oOC'.includes(ch)) m.blocks[k] = ch;
     }));
     MAPS[id] = m;
   };
@@ -119,11 +135,11 @@
     'IFFFLFFFI',
     'IFFFFFFFI',
     'IIIIgIIII',
-    'IFFFFFFFI',
-    'IpFFoFFpI',
+    'IpFFFFFpI',
+    'IFIFoFFFI',
     'IFFoFoFFI',
     'IFFFFFFFI',
-    'IHFFFFpFI',
+    'IHFFFIpII',
     'IIIIEIIII',
   ], { puzzle: 'herd', hint: 'Gym challenge: the Fluffin have wandered off! Nudge all three into the hay pens to open the gate.' });
 
@@ -131,6 +147,8 @@
     'IIIIIIIIIIIII',
     'IFFFFFLFFFFFI',
     'IFFFFFFFFFFFI',
+    'IIqIIIIIIIjII',
+    'IF1FFFIFFF3FI',
     'IIyIIIIIIIuII',
     'IFFFFFIFFFFFI',
     'IF3FFFIFFF2FI',
@@ -140,21 +158,38 @@
     'IFF1FFFFFFFFI',
     'IHFFFFFFFFFFI',
     'IIIIIIEIIIIII',
-  ], { puzzle: 'valves', hint: 'Gym challenge: step on a coloured valve to switch every waterfall of that colour. Open a way to the Leader.' });
+  ], { puzzle: 'valves', hint: 'Gym challenge: step on a coloured valve to switch every waterfall of that colour. Some open as others shut. Find an order that gets you through.' });
 
   interior('gym_Fire', 'Kilnford Gym', [
-    'IIIIIIIIIIIII',
-    'IFFFFFLFFFFFI',
-    'IFFFFFFFFFFFI',
-    'IIIIIIgIIIIII',
-    'IFFFFFFFFFFFI',
-    'IFBlBlBlBlBFI',
-    'IFFFFFFFFFFFI',
-    'IllllFFFllllI',
-    'IFFFFFFFFFFFI',
-    'IHFFFFFFFFFFI',
-    'IIIIIIEIIIIII',
-  ], { puzzle: 'fire', fire0: [false, true, true, true, false], hint: 'Gym challenge: light all five braziers. Touching one flips it and its neighbours.' });
+    'IIIIIIIIIIIIIIIII',
+    'IFFFFFFFLFFFFFFFI',
+    'IFFFFFFFFFFFFFFFI',
+    'IIIIIIIIgIIIIIIII',
+    'IFFFFFFFFFFFFFFFI',
+    'IFBlBlBlBlBlBlBFI',
+    'IFFFFFFFFFFFFFFFI',
+    'IlllllFFFFFlllllI',
+    'IFFFFFFFFFFFFFFFI',
+    'IHFFFFFFFFFFFFFFI',
+    'IIIIIIIIEIIIIIIII',
+  ], { puzzle: 'fire', fire0: [true, false, false, true, false, true, false], hint: 'Gym challenge: light all seven braziers. Touching one flips it and its neighbours.' });
+
+  interior('gym_Wind', 'Galeholt Gym', [
+    'IIIIIIIIIII',
+    'IFFFFLFFFFI',
+    'IFFFFFFFFFI',
+    'IIIIIFIIIII',
+    'IVI<><<>>>I',
+    'IA<A>>V><AI',
+    'I>><>F<IAFI',
+    'II<IFF>VIAI',
+    'I>AFFVIAAFI',
+    'IV>>AFVA>FI',
+    'IVV<V<F<VFI',
+    'IFFFFFFFFFI',
+    'IHFFFFFFFFI',
+    'IIIIIEIIIII',
+  ], { puzzle: 'gusts', hint: 'Gym challenge: the floor vents blow you wherever they point until something stops you. Ride the gusts to the far door.' });
 
   interior('gym_Rock', 'Cairnside Gym', [
     'IIIIIIIIIII',
@@ -166,9 +201,12 @@
     'IIvIIIIIIII',
     'IFFFFFFFFFI',
     'IFFOFFFFOFI',
+    'IFFFFFFFFFI',
+    'IIIIIIIvIII',
+    'IFFOFFFFFFI',
     'IHFFFFFFFFI',
     'IIIIIEIIIII',
-  ], { puzzle: 'pits', hint: 'Gym challenge: the way is broken by pits. Push boulders into them to make a path.' });
+  ], { puzzle: 'pits', hint: 'Gym challenge: three pits break the way. Push boulders into them to make a path. A boulder against a wall is stuck for good.' });
 
   interior('gym_Electric', 'Lumenlea Gym', [
     'IIIIIIIII',
@@ -176,46 +214,80 @@
     'IFFFFFFFI',
     'IIIIgIIII',
     'IFFFFFFFI',
+    'IzzzzzzzI',
+    'IzIzzzIzI',
+    'IzzzzzzzI',
     'IzzzIzzzI',
     'IzIzzzIzI',
     'IzzzzzzzI',
-    'IzzIzzzzI',
     'IFFFFFFFI',
     'IHFFFFFFI',
     'IIIIEIIII',
   ], { puzzle: 'panels', hint: 'Gym challenge: charge every floor panel by stepping on it once. Step on a charged panel and the whole grid resets.' });
 
-  interior('gym_Ice', 'Frosthollow Gym', [
+  interior('gym_Metal', 'Steelspire Gym', [
     'IIIIIIIII',
     'IFFFLFFFI',
     'IFFFFFFFI',
-    'IIIIFIIII',
-    'IiiiikiiI',
-    'IiiiiiikI',
-    'IkiikiiiI',
-    'IiiiiiiiI',
-    'IiikiiikI',
-    'IiiiiikiI',
-    'IFFFFFFFI',
+    'IIIIgIIII',
+    'IFFPFFFFI',
+    'IFCFFICFI',
+    'IFFIFFFFI',
+    'IPFFCFFPI',
     'IHFFFFFFI',
     'IIIIEIIII',
+  ], { puzzle: 'herd', hint: 'Gym challenge: three steel crates, three pressure plates. Hold every plate down to open the gate.' });
+
+  interior('gym_Ice', 'Frosthollow Gym', [
+    'IIIIIIIIIII',
+    'IFFFFLFFFFI',
+    'IFFFFFFFFFI',
+    'IIIIIFIIIII',
+    'IkikiiiikiI',
+    'IiiiiikiiiI',
+    'IikiiiiiiiI',
+    'IkikikikiiI',
+    'IiiiiikiiiI',
+    'IiikiiiikiI',
+    'IiikikikiiI',
+    'IiikkkkkiiI',
+    'IFFFFFFFFFI',
+    'IHFFFFFFFFI',
+    'IIIIIEIIIII',
   ], { puzzle: 'ice', hint: 'Gym challenge: the floor is sheer ice. You slide until something stops you. Find a way to the far door.' });
 
   interior('gym_Shadow', 'Thornmuth Gym', [
+    'IIIIIIIIIIIIIII',
+    'IFFFFFFLFFFFFFI',
+    'IFFFFFFFFFFFFFI',
+    'IIIIIIIIIIIIgII',
+    'IFFFIFFFFFIFFFI',
+    'IFIFIFIIIFIFItI',
+    'IFIFFFIFFFIFIFI',
+    'IFIIIIIFIIIFIFI',
+    'IFFFFFFFItFFIFI',
+    'IIIFIIIFIIIFIFI',
+    'ItFFIFFFFFFFIFI',
+    'IIIFIFIIIIIIIFI',
+    'IFIIIFItIIIFIFI',
+    'IHFFFFFFFFFFFtI',
+    'IIIIIIIEIIIIIII',
+  ], { puzzle: 'seals', dark: true, hint: 'Gym challenge: the lights are out. Somewhere in the dark are five seals. Step on each to open the gate.' });
+
+  interior('gym_Mind', 'Reverie Gym', [
     'IIIIIIIIIIIII',
     'IFFFFFLFFFFFI',
+    'IFFFFFFFFFF9I',
+    'IIIIIIIIIIIII',
+    'IIIIIIIIIIIII',
+    'I4F6I6F8I8F9I',
+    'IIIIIIIIIIIII',
+    'I5F7I7FFIIIII',
+    'IIIIIIIIIIIII',
     'IFFFFFFFFFFFI',
-    'IIIIIIIIIIgII',
-    'IFtFIFFFFFFFI',
-    'IFIFIFIIIIIFI',
-    'IFIFFFIFFtFFI',
-    'IFIIIIIFIIIII',
-    'IFFFFFFFFFFFI',
-    'IIIFIIIIIIIFI',
-    'IFFFFFFFFFFFI',
-    'IHFFFFFFFFFtI',
+    'IH4FFFFFFF5FI',
     'IIIIIIEIIIIII',
-  ], { puzzle: 'seals', dark: true, hint: 'Gym challenge: the lights are out. Somewhere in the dark are three seals. Step on each to open the gate.' });
+  ], { puzzle: 'warps', hint: 'Gym challenge: the rooms have no doors. Each warp pad leads to its twin somewhere else. Find the chain that reaches the Leader.' });
 
   interior('gym_Normal', 'Anvilgate Gym', [
     'IIIIIIIII',
@@ -227,9 +299,13 @@
     'IFFFFFFFI',
     'IIIIFIIII',
     'IFFFFFFFI',
+    'IIIIFIIII',
+    'IFFFFFFFI',
+    'IIIIFIIII',
+    'IFFFFFFFI',
     'IHFFFFFFI',
     'IIIIEIIII',
-  ], { puzzle: 'quiz', hint: 'Gym challenge: three gatekeepers test what you know. Answer wrong and you must battle before trying again.' });
+  ], { puzzle: 'quiz', hint: 'Gym challenge: five gatekeepers test what you know. Answer wrong and you must battle before trying again.' });
 
   interior('grove', 'Drowsing Grove', [
     '#############',
@@ -262,7 +338,7 @@
   ]);
 
   // ---------- Overworld ----------
-  const W = 100, H = 96;
+  const W = 124, H = 96;
   const g = Array.from({ length: H }, () => Array(W).fill('#'));
   const rect = (x0, y0, x1, y1, ch) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = ch; };
   const set = (x, y, ch) => { g[y][x] = ch; };
@@ -277,14 +353,14 @@
     WARPS[`world:${x + 2},${y + 2}`] = { map: to, need };
     MAPS[to].out = ['world', x + 2, y + 3];
   };
-  const GYM_ORDER = ['Grass', 'Water', 'Fire', 'Rock', 'Electric', 'Ice', 'Shadow', 'Normal'];
+  const GYM_ORDER = ['Grass', 'Water', 'Fire', 'Wind', 'Rock', 'Electric', 'Metal', 'Ice', 'Shadow', 'Mind', 'Normal'];
   const gymHall = (x, y, el) => {
     const n = GYM_ORDER.indexOf(el);
     hall(x, y, el, `gym_${el}`, (S) => (badgeCount(S) >= n ? null
       : `The gym doors are shut. A notice reads: "Challengers need ${n} badge${n === 1 ? '' : 's'}."`));
   };
 
-  rect(56, 0, 99, 24, 'T');   // the snowy north-east
+  rect(56, 0, 123, 24, 'T');  // the snowy north-east
   rect(77, 25, 99, 45, '^');  // Cairnside cliffs
   rect(2, 33, 12, 51, '^');   // Gritstone Mine
   rect(26, 3, 42, 20, '^');   // Brinecut Tunnel
@@ -320,6 +396,12 @@
   rect(4, 35, 10, 49, '_'); set(11, 48, '_'); rect(4, 44, 10, 44, '^'); set(9, 44, 'x'); rect(5, 40, 10, 40, '^');
   rect(5, 46, 8, 48, ':'); rect(6, 41, 9, 43, ':'); rect(4, 36, 7, 38, ':'); set(7, 34, '_');
   area('Gritstone Mine', 2, 33, 12, 51, [8, 11], [60, 38, 2]);
+  // Route 12, the Windswept Steppe, and Galeholt
+  set(20, 51, '.'); rect(4, 52, 22, 66, '.'); rect(4, 55, 18, 55, '#'); rect(8, 59, 22, 59, '#'); rect(4, 63, 18, 63, '#');
+  rect(6, 52, 12, 54, ','); rect(10, 56, 20, 58, '*'); rect(5, 60, 12, 62, ','); rect(12, 64, 20, 66, '*'); set(6, 67, '.');
+  area('Route 12', 4, 51, 22, 67, [19, 22], [45, 48, 7]);
+  rect(4, 68, 22, 80, '.'); gymHall(10, 69, 'Wind'); house(17, 70); house(5, 75); set(14, 76, 'H'); rect(6, 72, 16, 72, '=');
+  area('Galeholt', 4, 68, 22, 80);
   // Furrowfield
   rect(3, 22, 22, 33, '.'); gymHall(10, 23, 'Grass'); house(17, 23); set(18, 28, 'H'); rect(14, 30, 21, 32, '*');
   rect(7, 27, 16, 27, '='); rect(7, 27, 7, 33, '='); rect(16, 21, 16, 27, '=');
@@ -339,7 +421,13 @@
   area('Route 4', 36, 21, 41, 41, [14, 17], [50, 45, 5]);
   // The Forgeway and Anvilgate
   rect(48, 44, 56, 52, '.'); rect(48, 48, 56, 48, '='); rect(49, 45, 55, 46, ','); rect(49, 50, 55, 51, '*');
-  area('The Forgeway', 48, 44, 56, 52, [18, 21], [45, 48, 7]);
+  area('The Forgeway', 48, 44, 56, 52, [22, 25], [45, 48, 7]);
+  // Route 13, the Ironway, and Steelspire
+  rect(52, 41, 52, 43, '='); rect(47, 22, 55, 40, '.'); rect(47, 36, 54, 36, '^'); set(55, 36, 'x'); rect(49, 31, 55, 31, '^'); rect(47, 26, 53, 26, '^');
+  rect(48, 37, 53, 39, ':'); rect(50, 32, 55, 35, ','); rect(47, 27, 52, 30, ':'); rect(48, 22, 54, 25, ','); set(50, 21, 'c');
+  area('Route 13', 47, 21, 55, 43, [31, 34], [25, 55, 20]);
+  rect(44, 6, 55, 20, 'c'); gymHall(47, 7, 'Metal'); house(44, 13); set(53, 16, 'H');
+  area('Steelspire', 44, 6, 55, 20);
   rect(58, 34, 76, 50, 'c'); gymHall(65, 35, 'Normal');
   hall(59, 35, 'Plant', 'plant', (S) => (S.f.blade ? null : 'The Energy Plant is sealed. League staff only.'));
   house(72, 35); house(59, 42); house(72, 44); set(62, 46, 'H');
@@ -350,46 +438,54 @@
   set(92, 39, 'S'); set(94, 45, 'S');
   rect(84, 26, 97, 38, 'S'); gymHall(86, 27, 'Rock'); rect(93, 27, 96, 28, 'M'); house(92, 32); set(90, 35, 'H');
   area('Cairnside', 84, 26, 97, 38);
-  area('Route 6', 78, 39, 97, 45, [20, 23], [40, 50, 10]);
+  area('Route 6', 78, 39, 97, 45, [24, 27], [40, 50, 10]);
   // Gloamwood and Lumenlea
   rect(88, 46, 97, 61, ';'); rect(90, 48, 91, 50, '#'); rect(94, 52, 95, 55, '#'); rect(89, 57, 90, 58, '#');
   rect(92, 46, 93, 49, '.'); rect(91, 53, 92, 55, '.'); rect(93, 58, 94, 61, '.');
   [[93, 47], [91, 54], [94, 59], [89, 52], [96, 57]].forEach(([x, y]) => set(x, y, 'm'));
   set(92, 62, '.');
-  area('Gloamwood', 88, 46, 97, 62, [24, 27], [30, 55, 15]);
+  area('Gloamwood', 88, 46, 97, 62, [27, 30], [30, 55, 15]);
   rect(80, 63, 97, 75, '.'); gymHall(86, 64, 'Electric'); house(81, 69); house(93, 65); set(92, 70, 'H');
   [[82, 64], [84, 73], [90, 72], [96, 74], [80, 67], [95, 69]].forEach(([x, y]) => set(x, y, 'm'));
   area('Lumenlea', 80, 63, 97, 75);
   // Route 7 and Frosthollow
   rect(64, 22, 70, 32, '.'); rect(64, 22, 70, 26, 's'); rect(64, 27, 70, 27, '^'); set(66, 27, 'x');
   rect(68, 28, 70, 31, ','); rect(64, 23, 66, 25, '"'); set(67, 21, 's');
-  area('Route 7', 64, 21, 70, 32, [28, 32], [25, 55, 20]);
+  area('Route 7', 64, 21, 70, 32, [35, 38], [25, 55, 20]);
   rect(58, 8, 76, 20, 's'); gymHall(60, 9, 'Ice'); house(66, 9); rect(70, 10, 73, 12, '~'); house(59, 15); set(66, 16, 'H'); set(77, 14, 's');
   area('Frosthollow', 58, 8, 77, 20);
   // Route 9: a wide river, and Thornmuth beyond it
   rect(78, 10, 83, 18, 's'); rect(80, 11, 82, 13, '"'); rect(79, 15, 82, 17, '"');
   rect(84, 3, 88, 23, '~'); rect(89, 10, 91, 18, 's'); set(92, 14, 'c');
-  area('Route 9', 78, 3, 92, 23, [33, 37], [15, 55, 30]);
+  area('Route 9', 78, 3, 92, 23, [39, 42], [15, 55, 30]);
   rect(93, 6, 98, 21, 'c'); gymHall(93, 6, 'Shadow'); set(97, 16, 'H');
   area('Thornmuth', 93, 6, 98, 21);
+  // Route 14 and Reverie
+  set(99, 18, 'c'); set(100, 18, 's'); rect(101, 8, 110, 22, 's'); rect(101, 12, 107, 12, 'T'); rect(104, 17, 110, 17, 'T');
+  rect(102, 9, 106, 11, '"'); rect(103, 13, 109, 16, '"'); rect(101, 19, 105, 21, '"'); set(111, 10, 's');
+  area('Route 14', 99, 8, 111, 22, [43, 46], [12, 53, 35]);
+  rect(112, 4, 122, 20, 'c'); gymHall(114, 5, 'Mind'); house(113, 13); set(120, 16, 'H');
+  area('Reverie', 112, 4, 122, 20);
   // Route 10 and Summit City
   rect(70, 52, 74, 78, '.'); rect(70, 58, 74, 74, 's'); rect(70, 53, 71, 56, ','); rect(73, 60, 74, 66, '"'); rect(70, 68, 71, 72, '"');
   set(72, 79, 'c');
-  area('Route 10', 70, 52, 74, 79, [42, 46], [10, 50, 40]);
+  area('Route 10', 70, 52, 74, 79, [50, 54], [10, 50, 40]);
   rect(64, 80, 97, 94, 'c'); hall(77, 81, 'League', null, null, 7); hall(90, 81, 'Plant'); house(65, 82); house(86, 89); set(70, 88, 'H');
   area('Summit City', 64, 80, 97, 94);
 
   MAPS.world = {
     id: 'world', name: 'Galdra', rows: g.map((row) => row.join('')),
-    puzzle: null, fire0: [], targets: [], marks: [], pits: [], fires: [], blocks: {},
+    puzzle: null, fire0: [], targets: [], marks: [], pits: [], fires: [], blocks: {}, pads: {},
   };
   const START = { x: 10, y: 89 };
   const areaAt = (id, x, y) => (id === 'world'
     ? AREAS.find((a) => x >= a.x0 && x <= a.x1 && y >= a.y0 && y <= a.y1) || { name: 'Galdra' }
     : MAPS[id].area || { name: MAPS[id].name });
 
-  // ---------- Chests ----------
-  const chest = (x, y, what, map = 'world') => CHESTS.push({ map, x, y, ...(CM.CARDS[what] ? { card: what } : { outfit: what }) });
+  // ---------- Pickups ----------
+  // Sparkles on the ground, collected by walking over them: a card, clothes, an item, or a spray design ('spray:<id>').
+  const chest = (x, y, what, map = 'world') => CHESTS.push({ map, x, y,
+    ...(what.startsWith('spray:') ? { spray: what.slice(6) } : CM.CARDS[what] ? { card: what } : CM.ITEMS[what] ? { item: what } : { outfit: what }) });
   chest(21, 85, 'hp30'); chest(7, 94, 'scratch'); chest(43, 88, 'pebble_toss'); chest(24, 92, 'spark');
   chest(59, 94, 'straw_hat'); chest(45, 83, 'frost_nip'); chest(50, 73, 'hp30');
   chest(25, 57, 'shade_jab'); chest(65, 71, 'hp100'); chest(44, 63, 'tsunami_blast'); chest(25, 70, 'body_slam'); chest(65, 57, 'varsity');
@@ -398,6 +494,15 @@
   chest(48, 44, 'night_claw'); chest(76, 50, 'hp100'); chest(78, 44, 'hp100'); chest(96, 40, 'inferno_crash'); chest(84, 38, 'hp250');
   chest(88, 46, 'hp250'); chest(97, 61, 'hp100'); chest(80, 75, 'hp250'); chest(64, 22, 'hp250'); chest(76, 20, 'hp250');
   chest(89, 18, 'hp250'); chest(98, 21, 'hp250'); chest(70, 78, 'hp250'); chest(74, 52, 'earthshatter'); chest(97, 94, 'hp250');
+  chest(20, 93, 'creataball'); chest(58, 83, 'potion'); chest(26, 71, 'potion'); chest(64, 58, 'creataball'); chest(45, 53, 'potion');
+  chest(5, 53, 'spray:heart'); chest(21, 65, 'super_potion'); chest(5, 79, 'gloves'); chest(21, 79, 'creataball'); chest(22, 12, 'potion');
+  chest(40, 39, 'potion'); chest(55, 52, 'spray:bolt'); chest(48, 40, 'super_potion'); chest(55, 23, 'shield'); chest(44, 19, 'creataball');
+  chest(59, 50, 'spray:skull'); chest(95, 44, 'super_potion'); chest(97, 38, 'charm'); chest(97, 47, 'spray:flower'); chest(81, 74, 'creataball');
+  chest(70, 31, 'super_potion'); chest(59, 20, 'boots'); chest(83, 18, 'max_potion'); chest(93, 21, 'spray:paw'); chest(110, 22, 'leaf');
+  chest(122, 20, 'creataball'); chest(112, 20, 'spray:crown'); chest(74, 77, 'max_potion'); chest(64, 94, 'revive'); chest(97, 80, 'spray:swirl');
+  chest(24, 56, 'revive'); chest(10, 49, 'potion'); chest(4, 80, 'gust'); chest(55, 6, 'iron_bash'); chest(122, 4, 'psy_wave');
+  chest(4, 2, 'spray:wolf', 'grove');
+  chest(3, 12, 'pirate'); chest(118, 20, 'halo'); chest(96, 60, 'cat_ears');
 
   // ---------- People ----------
   // look: the parts of an outfit that differ from the default. show(S): whether they are around right now.
@@ -420,26 +525,42 @@
   const TEAMS = {
     finn1: [['Fluffin', 1], ['Sproutle', 2]],
     finn2: [['Fluffin', 4], ['Chirple', 4], ['Sproutle', 5]],
-    finn3: [['Fluffalo', 29], ['Skylord', 29], ['Thornback', 30], ['Stormcrow', 30]],
-    finn4: [['Fluffalo', 46], ['Skylord', 46], ['Thornback', 46], ['Stormcrow', 47], ['Tidewyrm', 47]],
-    cyril1: [['Frostfinch', 9], ['Gloomoth', 9], ['Voltmite', 10]],
-    cyril2: [['Frostfinch', 23], ['Gloomoth', 23], ['Prismite', 24], ['Voidling', 24]],
-    cyril3: [['Frostmaw', 47], ['Voidling', 47], ['Prismite', 48], ['Glacierback', 48]],
+    finn3: [['Fluffalo', 37], ['Skylord', 37], ['Thornback', 38], ['Stormkite', 38]],
+    finn4: [['Fluffalo', 54], ['Skylord', 54], ['Thornback', 54], ['Stormkite', 55], ['Tidewyrm', 55]],
+    cyril1: [['Frostfinch', 9], ['Dreamote', 9], ['Voltmite', 10]],
+    cyril2: [['Frostfinch', 26], ['Mesmoth', 26], ['Prismite', 27], ['Voidling', 27]],
+    cyril3: [['Frostmaw', 55], ['Oraclynx', 55], ['Prismite', 56], ['Glacierback', 56]],
     nettie1: [['Gloomoth', 16], ['Echobat', 16], ['Duskfang', 17]],
-    nettie2: [['Echobat', 37], ['Nightshade', 37], ['Duskfang', 38], ['Umbrawyrm', 38]],
-    nettie3: [['Echobat', 45], ['Nightshade', 45], ['Duskfang', 46], ['Umbrawyrm', 46]],
-    holler: [['Gloomoth', 35], ['Duskfang', 36]],
-    opaline: [['Glimmershell', 47], ['Stormcrow', 47], ['Magmite', 48], ['Leviadon', 48]],
-    marina2: [['Dewsnake', 47], ['Rivermaw', 47], ['Tidewyrm', 48], ['Leviadon', 48]],
-    gneiss2: [['Stoneviper', 48], ['Shardwing', 48], ['Boulderon', 49], ['Ironhide', 49]],
-    brann2: [['Grizzlord', 49], ['Skylord', 49], ['Fluffalo', 49], ['Regalion', 50]],
-    sterling: [['Boulderon', 49], ['Shardwing', 49], ['Stoneviper', 49], ['Cavernking', 50], ['Ironhide', 51]],
-    eternox1: [['Eternox', 52]],
-    eternox2: [['Eternox', 55]],
-    vex: [['Stormcrow', 53], ['Nightshade', 53], ['Magmaw', 54], ['Leviadon', 54], ['Glacierback', 54], ['Pyreking', 56]],
-    quiz: [['Antlerox', 40], ['Skylord', 40]],
+    nettie2: [['Echobat', 42], ['Nightshade', 42], ['Duskfang', 43], ['Umbrawyrm', 43]],
+    nettie3: [['Echobat', 53], ['Nightshade', 53], ['Duskfang', 54], ['Umbrawyrm', 54]],
+    holler: [['Gloomoth', 40], ['Duskfang', 41]],
+    opaline: [['Glimmershell', 55], ['Stormcrow', 55], ['Ironclaw', 56], ['Leviadon', 56]],
+    marina2: [['Dewsnake', 55], ['Rivermaw', 55], ['Tidewyrm', 56], ['Leviadon', 56]],
+    gneiss2: [['Stoneviper', 56], ['Shardwing', 56], ['Boulderon', 57], ['Ironhide', 57]],
+    brann2: [['Grizzlord', 57], ['Skylord', 57], ['Fluffalo', 57], ['Regalion', 58]],
+    sterling: [['Cogshell', 59], ['Ironclaw', 59], ['Cavernking', 60], ['Anviltusk', 60], ['Ironhide', 61]],
+    eternox1: [['Eternox', 62]],
+    eternox2: [['Eternox', 65]],
+    vex: [['Stormcrow', 63], ['Nightshade', 63], ['Magmaw', 64], ['Leviadon', 64], ['Glacierback', 64], ['Pyreking', 66]],
+    quiz: [['Antlerox', 48], ['Skylord', 48]],
   };
 
+  // Trainers nickname their Creatamon and draw their own looks for them.
+  const NICKS = ['Biscuit', 'Mossy', 'Sir Chomp', 'Pickle', 'Noodle', 'Captain', 'Bramble', 'Dot', 'Waffles', 'Tugboat', 'Pepper', 'Fig',
+    'Moonpie', 'Rascal', 'Old Blue', 'Thimble', 'Jinx', 'Marbles', 'Scout', 'Doodle', 'Gizmo', 'Peanut', 'Queenie', 'Rumble',
+    'Sprocket', 'Tofu', 'Velvet', 'Widget', 'Yam', 'Zigzag', 'Acorn', 'Button', 'Clover', 'Dumpling', 'Echo', 'Fidget',
+    'Goblin', 'Hiccup', 'Inky', 'Jellybean', 'Kipper', 'Lumpy', 'Mittens', 'Nugget', 'Otto', 'Pudding', 'Quill', 'Radish',
+    'Smudge', 'Truffle', 'Ugly Bob', 'Vinnie', 'Wobble', 'Bandit', 'Cricket', 'Dizzy', 'Ember Jr', 'Flapjack', 'Gus', 'Hazel',
+    'Ivy', 'Juno', 'Koko', 'Lentil', 'Mango', 'Nibbles', 'Olive', 'Pip', 'Rocket', 'Sunny', 'Tank', 'Bubbles'];
+  const strHash = (str) => { let h = 2166136261; for (const ch of str) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0; };
+  // The Creatamon a trainer brings: each has a nickname and a hand-drawn look (sketch), seeded by who owns it.
+  const makeTeam = (owner, team) => team.map(([species, level, extra], i) => {
+    const c = CM.spawn(species, level, extra);
+    const seed = strHash(`${owner}/${species}/${i}`);
+    return Object.assign(c, { species, name: NICKS[(seed + i * 7) % NICKS.length], sketch: seed || 1 });
+  });
+
+  // items: handed over with the badge, on top of the reward cards.
   const GYMS = [
     { el: 'Grass', town: 'Furrowfield', name: 'Leader Thatch', team: [['Sproutle', 8], ['Slitherling', 8], ['Thornback', 10]], reward: ['vine_lash', 'hp100'],
       look: { hair: '#72cc5c', hat: 'straw_hat', top: 'tee', topColor: '#2f7a2c', bottom: 'shorts', bottomColor: '#8a5a2b' },
@@ -450,28 +571,37 @@
     { el: 'Fire', town: 'Kilnford', name: 'Leader Cinder', team: [['Emberpup', 17], ['Ladybop', 17], ['Magmite', 18], ['Cinderfox', 20]], reward: ['flame_wheel', 'hp100'],
       look: { hair: '#9a9a9a', top: 'tee', topColor: '#e0483c', bottom: 'shorts', bottomColor: '#f4f4f4' },
       pre: 'Every challenger who gives up does it at my gym. Show me you burn hotter!', post: 'A fine blaze. The Fire Badge. Wear it proudly.' },
-    { el: 'Rock', town: 'Cairnside', name: 'Leader Gneiss', team: [['Pebblit', 22], ['Gravlet', 23], ['Stoneviper', 23], ['Boulderon', 25]], reward: ['earthshatter', 'hp100'],
-      look: { skin: '#d9a066', hair: '#f3e2a0', hairStyle: 'spiky', top: 'tee', topColor: '#8a5a2b', bottomColor: '#2c2c3c' },
+    { el: 'Wind', town: 'Galeholt', name: 'Leader Zephyra', team: [['Breezlet', 22], ['Gustail', 22], ['Zephyrfox', 23], ['Stormkite', 24]], reward: ['whirlwind', 'hp100'],
+      look: { skin: '#fbe0c8', hair: '#b4e6c6', hairStyle: 'ponytail', top: 'poncho', topColor: '#55a8ee', bottom: 'leggings', bottomColor: '#f4f4f4' },
+      pre: 'You rode my gusts all the way here? Then hold on tight. This is the real storm!', post: 'You never lost your footing. The Wind Badge goes with you.' },
+    { el: 'Rock', town: 'Cairnside', name: 'Leader Gneiss', team: [['Pebblit', 26], ['Gravlet', 26], ['Stoneviper', 27], ['Boulderon', 28]], reward: ['earthshatter', 'hp100'],
+      look: { skin: '#d9a066', hair: '#f3e2a0', hairStyle: 'spiky', top: 'tank', topColor: '#8a5a2b', bottomColor: '#2c2c3c' },
       pre: 'You shifted my boulders. You will not shift me!', post: 'Cracked clean through. Here: the Rock Badge.' },
-    { el: 'Electric', town: 'Lumenlea', name: 'Madame Ohm', team: [['Voltmite', 27], ['Zapwing', 28], ['Prismite', 28], ['Stormcrow', 30]], reward: ['thunderstorm', 'hp250'],
-      look: { hair: '#f4f4f4', hairStyle: 'bob', hat: 'wizard_hat', top: 'dress', topColor: '#f6d643' },
+    { el: 'Electric', town: 'Lumenlea', name: 'Madame Ohm', team: [['Voltmite', 30], ['Zapwing', 31], ['Prismite', 31], ['Stormcrow', 32]], reward: ['thunderstorm', 'hp250'],
+      look: { hair: '#f4f4f4', hairStyle: 'bun', hat: 'wizard_hat', top: 'dress', topColor: '#f6d643' },
       pre: 'Seventy years I have led this gym, dearie. Do try to be a little shocking.', post: 'Oh, what a spark! The Electric Badge, with my compliments.' },
-    { el: 'Ice', town: 'Frosthollow', name: 'Leader Rime', team: [['Snowpuff', 32], ['Glimmershell', 33], ['Frostmaw', 33], ['Glacierback', 35]], reward: ['blizzard', 'hp250'],
-      look: { hair: '#9fe3ef', hairStyle: 'long', hat: 'beanie', hatColor: '#f4f4f4', top: 'hoodie', topColor: '#55a8ee', bottomColor: '#f4f4f4' },
+    { el: 'Metal', town: 'Steelspire', name: 'Leader Forge', team: [['Boltnut', 34], ['Cogshell', 35], ['Ironclaw', 35], ['Anviltusk', 36]], reward: ['titan_hammer', 'hp250'],
+      look: { skin: '#6e4424', hair: '#1c1c28', hairStyle: 'mohawk', hat: 'visor', top: 'overalls', topColor: '#566070', bottomColor: '#2c2c3c' },
+      pre: 'Every crate in its place. I like a tidy mind. Now let me hammer it flat!', post: 'Well struck! The Metal Badge. I forged it myself.' },
+    { el: 'Ice', town: 'Frosthollow', name: 'Leader Rime', team: [['Snowpuff', 38], ['Glimmershell', 39], ['Frostmaw', 39], ['Glacierback', 40]], reward: ['blizzard', 'hp250'],
+      look: { hair: '#9fe3ef', hairStyle: 'long', hat: 'beanie', hatColor: '#f4f4f4', top: 'puffer', topColor: '#55a8ee', bottomColor: '#f4f4f4' },
       pre: 'You kept your footing. Now keep your nerve!', post: 'You have melted my defence. The Ice Badge is yours.' },
-    { el: 'Shadow', town: 'Thornmuth', name: 'Leader Rook', team: [['Gloomoth', 37], ['Echobat', 38], ['Duskfang', 38], ['Umbrawyrm', 40]], reward: ['eclipse', 'hp250'],
+    { el: 'Shadow', town: 'Thornmuth', name: 'Leader Rook', team: [['Gloomoth', 42], ['Echobat', 43], ['Duskfang', 43], ['Umbrawyrm', 44]], reward: ['eclipse', 'hp250'],
       look: { hair: '#1c1c28', hairStyle: 'long', top: 'hoodie', topColor: '#2c2c3c', bottomColor: '#2c2c3c' },
       pre: 'Thornmuth has no grand stadium. Just me, the dark, and a town that still believes. Come on, then.', post: 'Heh. Lights up. Take the Shadow Badge, and look after my sister out there.' },
-    { el: 'Normal', town: 'Anvilgate', name: 'Leader Brann', team: [['Antlerox', 42], ['Skylord', 43], ['Fluffalo', 43], ['Grizzlord', 43], ['Regalion', 45]], reward: ['hyper_burst', 'hp250'],
+    { el: 'Mind', town: 'Reverie', name: 'Leader Sibyl', team: [['Dreamote', 46], ['Thinkling', 46], ['Mesmoth', 47], ['Oraclynx', 48]], reward: ['mind_break', 'hp250'],
+      look: { hair: '#f29ad0', hairStyle: 'pigtails', hat: 'halo', top: 'kimono', topColor: '#9b3fd6', bottom: 'long_skirt', bottomColor: '#5b3fa8' },
+      pre: 'I knew you would find the right pads. I did not foresee how this ends. How exciting!', post: 'So that is how it ends. The Mind Badge is yours.' },
+    { el: 'Normal', town: 'Anvilgate', name: 'Leader Brann', team: [['Antlerox', 50], ['Skylord', 51], ['Fluffalo', 51], ['Grizzlord', 51], ['Regalion', 52]], reward: ['hyper_burst', 'hp250'],
       look: { skin: '#a86b3c', hair: '#1c1c28', hat: 'cap', hatColor: '#f47a45', top: 'hoodie', topColor: '#1f5f9e', bottom: 'shorts', bottomColor: '#2c2c3c' },
-      pre: 'Only the Champion has ever beaten me. No tricks, no weakness to lean on. Just strength!', post: 'Ha! Finally someone worth losing to. The eighth badge is yours. Go and claim the Cup.' },
+      pre: 'Only the Champion has ever beaten me. No tricks, no weakness to lean on. Just strength!', post: 'Ha! Finally someone worth losing to. The last badge is yours. Go and claim the Cup.' },
   ];
   GYMS.forEach((gm) => {
     const map = `gym_${gm.el}`, [x, y] = MAPS[map].leader;
     MAPS[map].el = gm.el;
     person(`leader_${gm.el}`, map, x, y, gm.name, gm.look, { gym: gm });
   });
-  [[4, 7], [4, 5], [4, 3]].forEach(([x, y], i) => person(`quiz${i + 1}`, 'gym_Normal', x, y, 'Gatekeeper', LOOKS.staff,
+  [[4, 11], [4, 9], [4, 7], [4, 5], [4, 3]].forEach(([x, y], i) => person(`quiz${i + 1}`, 'gym_Normal', x, y, 'Gatekeeper', LOOKS.staff,
     { quiz: i + 1, show: (S) => S.quiz <= i }));
 
   const f = (S) => S.f;
@@ -500,11 +630,14 @@
   person('wren_glyph', 'world', 15, 29, 'Wren', LOOKS.wren, { show: (S) => !S.badges.Water });
   person('sterling_brine', 'world', 12, 9, 'Chairman Sterling', LOOKS.sterling, { show: (S) => S.badges.Water && !S.badges.Fire });
   // Anvilgate
-  person('guard_anvil', 'world', 57, 48, 'League Staff', LOOKS.staff, { show: (S) => badgeCount(S) < 3 });
+  person('guard_anvil', 'world', 57, 48, 'League Staff', LOOKS.staff, { show: (S) => badgeCount(S) < 4 });
   person('wren_vault', 'world', 71, 39, 'Wren', LOOKS.wren, { show: (S) => !f(S).night });
-  person('sterling_anvil', 'world', 63, 39, 'Chairman Sterling', LOOKS.sterling, { show: (S) => badgeCount(S) === 3 });
+  person('sterling_anvil', 'world', 63, 39, 'Chairman Sterling', LOOKS.sterling, { show: (S) => badgeCount(S) === 4 });
+  person('guard_steppe', 'world', 20, 51, 'League Staff', LOOKS.staff, { show: (S) => badgeCount(S) < 3 });
+  person('guard_iron', 'world', 52, 43, 'League Staff', LOOKS.staff, { show: (S) => badgeCount(S) < 6 });
+  person('holler_east', 'world', 99, 18, 'Team Holler Grunt', LOOKS.holler, { show: (S) => !S.badges.Shadow });
   person('finn_r7', 'world', 67, 33, 'Finn', LOOKS.finn, { show: (S) => !f(S).rival3 });
-  person('guard_r10', 'world', 72, 51, 'League Staff', LOOKS.staff, { show: (S) => badgeCount(S) < 8 });
+  person('guard_r10', 'world', 72, 51, 'League Staff', LOOKS.staff, { show: (S) => badgeCount(S) < GYM_ORDER.length });
   // Cairnside and beyond
   person('cyril_mural', 'world', 94, 29, 'Cyril', LOOKS.cyril, { show: (S) => S.badges.Rock && !f(S).mural });
   person('holler_gloam', 'world', 94, 45, 'Team Holler Grunt', LOOKS.holler, { show: (S) => !f(S).mural });
@@ -537,24 +670,51 @@
   trainer('hiker', 37, 30, 'Hiker Tor', { hair: '#8a5a2b', hat: 'ranger_hat', topColor: '#f47a45', bottomColor: '#8a5a2b' },
     [['Boulderon', 15], ['Gravlet', 16]], 'These hills made my Creatamon tough. Feel it!', 'Tougher than the hills, you are.', ['rock_slide']);
   trainer('lass', 52, 49, 'Florist Posy', { hair: '#f08aa0', hairStyle: 'long', hat: 'bow', hatColor: '#f6d643', top: 'dress', topColor: '#f08aa0' },
-    [['Bloomoth', 19], ['Petalwing', 19], ['Honeycub', 20]], 'Mind the flowers! Or battle me for them.', 'You walk gently and hit hard.', ['hp100', 'vine_lash']);
+    [['Bloomoth', 23], ['Petalwing', 23], ['Honeycub', 24]], 'Mind the flowers! Or battle me for them.', 'You walk gently and hit hard.', ['hp100', 'vine_lash']);
   trainer('ruin', 81, 43, 'Ruin Hunter Sol', { skin: '#a86b3c', hair: '#1c1c28', hat: 'straw_hat', topColor: '#f3e2a0', bottomColor: '#8a5a2b' },
-    [['Stoneviper', 21], ['Shardwing', 22]], 'They say two heroes are carved somewhere in these cliffs. Battle me while I look!',
+    [['Stoneviper', 25], ['Shardwing', 26]], 'They say two heroes are carved somewhere in these cliffs. Battle me while I look!',
     'Two heroes... or was it two beasts?', ['hp100', 'thunder_fang']);
   trainer('mystic', 90, 54, 'Mystic Luma', { hair: '#9b3fd6', hairStyle: 'long', hat: 'wizard_hat', top: 'dress', topColor: '#9b3fd6' },
-    [['Gloomoth', 25], ['Voidling', 26], ['Echobat', 26]], 'The mushrooms light the way. I will dim yours.', 'Your light is stronger.', ['night_claw', 'hp100']);
+    [['Gloomoth', 28], ['Voidling', 29], ['Echobat', 29]], 'The mushrooms light the way. I will dim yours.', 'Your light is stronger.', ['night_claw', 'hp100']);
   trainer('skier', 65, 24, 'Skier Elke', { hair: '#f3e2a0', hairStyle: 'bob', hat: 'beanie', hatColor: '#e0483c', top: 'hoodie', topColor: '#e0483c', bottomColor: '#1f5f9e' },
-    [['Frostfinch', 30], ['Snowpuff', 30], ['Frostmaw', 31]], 'First snow of the route! First battle too!', 'Brrr. You are ice cold.', ['ice_shard', 'hp250']);
+    [['Frostfinch', 36], ['Snowpuff', 36], ['Frostmaw', 37]], 'First snow of the route! First battle too!', 'Brrr. You are ice cold.', ['ice_shard', 'hp250']);
   trainer('angler', 79, 14, 'Angler Brook', { hair: '#3a2412', hat: 'straw_hat', topColor: '#55a8ee', bottom: 'shorts', bottomColor: '#8a5a2b' },
-    [['Gullwave', 34], ['Rivermaw', 35], ['Tidewyrm', 35]], 'The river only lets strong swimmers cross. Are yours?', 'Go on, then. Thornmuth is on the far bank.', ['hp250']);
+    [['Gullwave', 40], ['Rivermaw', 41], ['Tidewyrm', 41]], 'The river only lets strong swimmers cross. Are yours?', 'Go on, then. Thornmuth is on the far bank.', ['hp250']);
   trainer('ace1', 73, 55, 'Ace Trainer Vale', { hair: '#55a8ee', hairStyle: 'spiky', top: 'varsity', topColor: '#9b3fd6', bottomColor: '#2c2c3c' },
-    [['Cavernking', 43], ['Stormcrow', 43], ['Glacierback', 44]], 'Eight badges? Me too. Only one of us reaches the Cup.', 'It is you. Go.', ['hp250', 'solar_bloom']);
+    [['Cavernking', 51], ['Stormcrow', 51], ['Glacierback', 52]], 'Eight badges? Me too. Only one of us reaches the Cup.', 'It is you. Go.', ['hp250', 'solar_bloom']);
   trainer('ace2', 71, 75, 'Ace Trainer Wynn', { skin: '#6e4424', hair: '#1c1c28', hairStyle: 'long', top: 'varsity', topColor: '#e0483c', bottomColor: '#2c2c3c' },
-    [['Umbrawyrm', 45], ['Magmaw', 45], ['Leviadon', 45]], 'Summit City is just ahead. Last chance to turn back!', 'No turning back for you, then.', ['hp250', 'tsunami_blast']);
+    [['Umbrawyrm', 53], ['Magmaw', 53], ['Leviadon', 53]], 'Summit City is just ahead. Last chance to turn back!', 'No turning back for you, then.', ['hp250', 'tsunami_blast']);
+
+  trainer('kite', 13, 57, 'Kite Flyer Wim', { hair: '#f3e2a0', hairStyle: 'ponytail', top: 'tank', topColor: '#55a8ee', bottom: 'shorts', bottomColor: '#f4f4f4' },
+    [['Breezlet', 20], ['Zephyrfox', 21]], 'The steppe wind carries my Creatamon. Can yours keep up?', 'Blown away!', ['gust', 'hp100']);
+  trainer('smith', 50, 33, 'Smith Bex', { skin: '#a86b3c', hair: '#c0452c', hairStyle: 'bun', top: 'overalls', topColor: '#8a5a2b', bottomColor: '#2c2c3c' },
+    [['Cogshell', 32], ['Ironclaw', 33]], 'Fresh off the anvil! Want to test their temper?', 'You have got mettle.', ['rivet_toss', 'hp250']);
+  trainer('seer', 105, 15, 'Seer Ombra', { hair: '#f29ad0', hairStyle: 'curly', hat: 'flower_crown', top: 'kimono', topColor: '#9b3fd6', bottom: 'long_skirt', bottomColor: '#5b3fa8' },
+    [['Thinkling', 44], ['Mesmoth', 45], ['Oraclynx', 45]], 'I dreamed you would lose. Shall we check?', 'My dreams are not what they were.', ['psy_wave', 'hp250']);
+
+  // Trainers who stand in the road. They must be beaten to get past, and then move on.
+  const blocker = (id, x, y, name, look, team, pre, post) =>
+    person(id, 'world', x, y, name, look, { team, pre, post, reward: ['hp30'], show: (S) => !S.beaten[id] });
+  blocker('b1', 37, 55, 'Gate Trainer Hale', { hair: '#3a2412', hat: 'headband', hatColor: '#e0483c', top: 'tank', topColor: '#f4f4f4', bottomColor: '#1f5f9e' },
+    [['Breezlet', 7], ['Pebblit', 8]], 'Kilnford is through here, and so am I. Nobody walks in without a battle!', 'In you go. Mind the ceremony crowds.');
+  blocker('b2', 16, 21, 'Farmhand Jo', { skin: '#d9a066', hair: '#8a5a2b', hairStyle: 'pigtails', hat: 'straw_hat', top: 'overalls', topColor: '#55a8ee', bottomColor: '#1f5f9e' },
+    [['Honeycub', 10], ['Gustail', 11]], 'Hold it! Leader Thatch says badge winners owe me a battle on the way out.', 'Fair and square. The bridge is just ahead.');
+  blocker('b3', 38, 20, 'Tunnel Rat Pim', { hair: '#9a9a9a', hairStyle: 'mohawk', hat: 'miner_helmet', top: 'overalls', topColor: '#566070', bottomColor: '#2c2c3c' },
+    [['Boltnut', 15], ['Cogshell', 16]], 'You made it through my tunnel? Not without paying the toll: one battle!', 'Toll paid. Kilnford is down the hill.');
+  blocker('b4', 92, 39, 'Pilgrim Asha', { skin: '#a86b3c', hair: '#1c1c28', hairStyle: 'bun', top: 'poncho', topColor: '#e3c98a', bottom: 'long_skirt', bottomColor: '#8a5a2b' },
+    [['Stoneviper', 25], ['Ironclaw', 26]], 'Cairnside is sacred ground. Prove you are worthy of the climb.', 'Walk on, worthy one.');
+  blocker('b5', 92, 62, 'Lamplighter Odo', { hair: '#f6d643', hairStyle: 'curly', hat: 'tophat', hatColor: '#2c2c3c', top: 'suit', topColor: '#2c2c3c', bottomColor: '#2c2c3c' },
+    [['Mesmoth', 29], ['Thinkling', 29], ['Voidling', 30]], 'Few come out of the Gloamwood. Fewer get past me!', 'Lumenlea welcomes you. Mind the mushrooms.');
+  blocker('b6', 67, 21, 'Snowguard Ilse', { hair: '#f4f4f4', hairStyle: 'ponytail', hat: 'beanie', hatColor: '#1f5f9e', top: 'puffer', topColor: '#f4f4f4', bottom: 'joggers', bottomColor: '#1f5f9e' },
+    [['Frostmaw', 37], ['Stormkite', 38]], 'Halt! Frosthollow is snowed in for all but the strong.', 'Strong enough. Go and get warm.');
+  blocker('b7', 111, 10, 'Dreamer Quill', { hair: '#b58cf0', hairStyle: 'afro', hat: 'headphones', hatColor: '#f29ad0', top: 'polka', topColor: '#9b3fd6', bottom: 'leggings', bottomColor: '#2c2c3c' },
+    [['Oraclynx', 45], ['Mesmoth', 45]], 'Is this a dream? Battle me and we will find out.', 'Ouch. Awake, then. Reverie is right here.');
+  blocker('b8', 72, 79, 'Cup Hopeful Rey', { skin: '#6e4424', hair: '#e0483c', hairStyle: 'afro', top: 'jersey', topColor: '#e0483c', bottom: 'joggers', bottomColor: '#2c2c3c' },
+    [['Anviltusk', 52], ['Pyreking', 52], ['Oraclynx', 53]], 'One of us walks into Summit City. I trained all year for this!', 'All year, and it is you. Win it for both of us.');
 
   Object.assign(CM, {
-    MAPS, WARPS, TINT, AREAS, CHESTS, NPCS, GYMS, TEAMS, LOOKS, START, DIRS, GATE, GYM_ORDER,
-    badgeCount, charAt, gateOpen, passable, groundAt, areaAt, initPuzzle, checkSolved, step, arrive, toggleFire,
+    MAPS, WARPS, TINT, AREAS, CHESTS, NPCS, GYMS, TEAMS, LOOKS, START, DIRS, GATE, GYM_ORDER, NICKS, makeTeam,
+    badgeCount, charAt, gateOpen, passable, groundAt, areaAt, initPuzzle, checkSolved, step, arrive, toggleFire, teleAt, GUSTS,
   });
 })(typeof module !== 'undefined' ? require('./core.js') : CM);
 if (typeof module !== 'undefined') module.exports = require('./core.js');

@@ -54,8 +54,6 @@ button { font: inherit; cursor: pointer; }
     linear-gradient(#3b0008 0 45%, #120003 45%);
 }
 #battle.domain .pad { background: #e60a0a55; }
-#actions .side.three { grid-template-columns: 1fr 1fr; }
-#actions .side.three .wide { grid-column: 1 / -1; }
 #actions .maxbtn { background: linear-gradient(90deg, #ffd9e6, #fff); border-color: #c2255c; border-left-color: #e0483c; }
 /* The attacker leans in while its move plays. */
 .sprite.lunge { animation: none; transition: transform .12s; }
@@ -87,7 +85,9 @@ button { font: inherit; cursor: pointer; }
 .bar i.low { background: #e0483c; }
 #actions { display: flex; gap: 6px; padding: 8px; z-index: 25; }
 #actions .moves { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 44px; gap: 6px; overflow-y: auto; padding-right: 2px; }
-#actions .side { width: 170px; display: grid; grid-auto-rows: 44px; gap: 6px; align-content: start; }
+#actions .side { width: 170px; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 28px; gap: 5px; align-content: start; }
+#actions .side .wide { grid-column: 1 / -1; }
+#actions .side button { text-align: center; border-left-width: 2px; }
 #actions button {
   border: 2px solid #3a3a52; border-radius: 8px; background: #fff; padding: 2px 8px;
   text-align: left; border-left-width: 10px;
@@ -194,3 +194,20 @@ button.card:hover:not(:disabled) { transform: translateY(-2px); }
 .badges { display: flex; flex-wrap: wrap; gap: 5px; }
 .badges span { padding: 2px 9px; border: 2px dashed #aaa; border-radius: 12px; font-size: 12px; color: #999; }
 .badges span.won { border: 2px solid #3a3a52; background: var(--c); color: #1c1c28; font-weight: bold; }
+
+/* ---- Drawing editor, items, sprays, help ---- */
+.forge.wide { grid-template-columns: 276px 1fr; }
+.forge.wide canvas.drawing { width: 256px; height: 256px; background-size: 16px 16px; }
+.forge.wide .palette { grid-template-columns: repeat(12, 1fr); }
+.anycolor { font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.anycolor input, .swatches input[type=color] { width: 34px; height: 24px; padding: 0; border: 2px solid #3a3a52; border-radius: 6px; background: #fff; cursor: pointer; }
+.mon select { font: inherit; font-size: 12px; border: 2px solid #3a3a52; border-radius: 6px; background: #fff; }
+#menu button.evolve { background: #f6d643; font-weight: bold; animation: bob .7s infinite alternate; }
+.dex span small { color: #777; }
+.sprays { display: flex; flex-wrap: wrap; gap: 5px; }
+.sprays button { width: 46px; height: 46px; padding: 3px; border: 2px solid #3a3a52; border-radius: 8px; background: #d9d4c6; }
+.sprays button.on { outline: 3px solid #e0483c; background: #fff; }
+.sprays canvas { width: 100%; height: 100%; }
+.howto { margin: 0; display: grid; grid-template-columns: 110px 1fr; gap: 7px 12px; }
+.howto dt { font-weight: bold; }
+.howto dd { margin: 0; }

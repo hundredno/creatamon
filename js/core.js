@@ -9,18 +9,22 @@ const CM = (() => {
     Rock: { color: '#b39474', dark: '#6a5038' },
     Ice: { color: '#9fe3ef', dark: '#3d8ea0' },
     Shadow: { color: '#8a78bd', dark: '#33284f' },
+    Wind: { color: '#b4e6c6', dark: '#4a9474' },
+    Metal: { color: '#b9c0cc', dark: '#566070' },
+    Mind: { color: '#f29ad0', dark: '#9c3a78' },
     // Not selectable in the Forge; only the secret cards use it.
     Cursed: { color: '#9b3fd6', dark: '#3d0f5e', hidden: true },
   };
   const STRONG = {
-    Normal: [], Fire: ['Grass', 'Ice'], Water: ['Fire', 'Rock'], Grass: ['Water', 'Rock'],
-    Electric: ['Water', 'Shadow'], Rock: ['Fire', 'Electric', 'Ice'], Ice: ['Grass'],
-    Shadow: ['Shadow', 'Normal'], Cursed: [],
+    Normal: [], Fire: ['Grass', 'Ice', 'Metal'], Water: ['Fire', 'Rock'], Grass: ['Water', 'Rock'],
+    Electric: ['Water', 'Shadow', 'Wind'], Rock: ['Fire', 'Electric', 'Ice'], Ice: ['Grass', 'Wind'],
+    Shadow: ['Shadow', 'Normal', 'Mind'], Wind: ['Grass', 'Fire'], Metal: ['Ice', 'Rock'], Mind: ['Normal', 'Wind'], Cursed: [],
   };
   const WEAK = {
-    Normal: ['Shadow'], Fire: ['Fire', 'Water', 'Rock'], Water: ['Water', 'Grass'], Grass: ['Grass', 'Fire'],
-    Electric: ['Electric', 'Grass', 'Rock'], Rock: ['Rock', 'Grass'], Ice: ['Ice', 'Fire', 'Water'],
-    Shadow: ['Rock'], Cursed: [],
+    Normal: ['Shadow', 'Metal'], Fire: ['Fire', 'Water', 'Rock'], Water: ['Water', 'Grass'], Grass: ['Grass', 'Fire', 'Metal'],
+    Electric: ['Electric', 'Grass', 'Rock'], Rock: ['Rock', 'Grass', 'Metal'], Ice: ['Ice', 'Fire', 'Water', 'Metal'],
+    Shadow: ['Rock'], Wind: ['Wind', 'Rock', 'Metal'], Metal: ['Metal', 'Fire', 'Water', 'Electric'],
+    Mind: ['Mind', 'Shadow', 'Metal'], Cursed: [],
   };
   const effectiveness = (att, def) => (STRONG[att].includes(def) ? 2 : WEAK[att].includes(def) ? 0.5 : 1);
 
@@ -47,6 +51,9 @@ const CM = (() => {
     pebble_toss: mv('Pebble Toss', 1, 'Rock', 40),
     frost_nip: mv('Frost Nip', 1, 'Ice', 40),
     shade_jab: mv('Shade Jab', 1, 'Shadow', 40),
+    gust: mv('Gust', 1, 'Wind', 40),
+    rivet_toss: mv('Rivet Toss', 1, 'Metal', 40),
+    brain_poke: mv('Brain Poke', 1, 'Mind', 40),
     hp30: hp('Vitality Shard', 1, 30),
     // Mid range
     flame_wheel: mv('Flame Wheel', 2, 'Fire', 65),
@@ -56,6 +63,9 @@ const CM = (() => {
     rock_slide: mv('Rock Slide', 2, 'Rock', 70, 90),
     ice_shard: mv('Ice Shard', 2, 'Ice', 65),
     night_claw: mv('Night Claw', 2, 'Shadow', 65),
+    whirlwind: mv('Whirlwind', 2, 'Wind', 65),
+    iron_bash: mv('Iron Bash', 2, 'Metal', 70, 90),
+    psy_wave: mv('Psy Wave', 2, 'Mind', 65),
     body_slam: mv('Body Slam', 2, 'Normal', 70),
     mend: { kind: 'move', name: 'Mend', tier: 2, element: 'Normal', power: 0, acc: 100, heal: 0.5 },
     hp100: hp('Vitality Core', 2, 100),
@@ -70,6 +80,9 @@ const CM = (() => {
     solar_bloom: mv('Solar Bloom', 3, 'Grass', 110, 85),
     blizzard: mv('Blizzard', 3, 'Ice', 110, 85),
     eclipse: mv('Eclipse', 3, 'Shadow', 110, 85),
+    hurricane: mv('Hurricane', 3, 'Wind', 110, 85),
+    titan_hammer: mv('Titan Hammer', 3, 'Metal', 110, 85),
+    mind_break: mv('Mind Break', 3, 'Mind', 110, 85),
     hyper_burst: mv('Hyper Burst', 3, 'Normal', 120, 80),
     hp250: hp('Titan Heart', 3, 250),
     dawnblade: { ...mv('Dawnblade', 3, 'Normal', 130, 90), key: true },
@@ -109,9 +122,39 @@ const CM = (() => {
 
   const MAX_PARTY = 6, BASE_HP = 50, CRIT_RATE = 1 / 16;
 
+  // ---- Items ----
+  // ball: spent to forge a new Creatamon. heal / revive: used from the Bag, in battle too.
+  // held: one can be given to each Creatamon (atk: damage dealt, block: chance to nullify a hit,
+  // crit: critical-hit chance, spd: speed bonus, regen: share of health restored each turn).
+  const ITEMS = {
+    creataball: { name: 'Creataball', ball: true, desc: 'Needed to forge a new Creatamon' },
+    potion: { name: 'Potion', heal: 60, desc: 'Restores 60 HP' },
+    super_potion: { name: 'Super Potion', heal: 200, desc: 'Restores 200 HP' },
+    max_potion: { name: 'Max Potion', heal: 9999, desc: 'Restores all HP' },
+    revive: { name: 'Revive', revive: true, desc: 'Wakes a fainted Creatamon at half HP' },
+    gloves: { name: 'Punching Gloves', held: true, atk: 1.2, desc: 'Holder\'s attacks deal 20% more damage' },
+    shield: { name: 'Guard Shield', held: true, block: 0.3, desc: '30% chance to nullify a hit on the holder' },
+    charm: { name: 'Lucky Charm', held: true, crit: 0.25, desc: 'Holder lands critical hits far more often' },
+    boots: { name: 'Swift Boots', held: true, spd: 6, desc: 'Holder is much faster' },
+    leaf: { name: 'Mending Leaf', held: true, regen: 1 / 12, desc: 'Holder recovers a little HP every turn' },
+  };
+  const held = (c) => (c.item && ITEMS[c.item]) || {};
+
+  // ---- Evolution ----
+  // A Creatamon can evolve twice. Each stage builds in free health and makes every attack hit harder.
+  const EVOLVE_AT = [16, 36], STAGE_HP = [0, 60, 160], STAGE_DMG = [1, 1.15, 1.3];
+  const STAGE_NAMES = ['Basic', 'Evolved', 'Final form'];
+  const canEvolve = (c) => (c.stage || 0) < 2 && c.level >= EVOLVE_AT[c.stage || 0];
+  const evolve = (c) => {
+    const before = STAGE_HP[c.stage || 0];
+    c.stage = (c.stage || 0) + 1;
+    c.hp += STAGE_HP[c.stage] - before;
+  };
+
   // ---- Creatures ----
   const MAX_BOOST = 1.5;
-  const maxHp = (c) => Math.round((BASE_HP + 6 * (c.level - 1) + c.hpCards.reduce((s, id) => s + CARDS[id].amount, 0)) * (c.max ? MAX_BOOST : 1));
+  const maxHp = (c) => Math.round((BASE_HP + 6 * (c.level - 1) + STAGE_HP[c.stage || 0]
+    + c.hpCards.reduce((s, id) => s + CARDS[id].amount, 0)) * (c.max ? MAX_BOOST : 1));
   // Max Mode (c.max) lasts for one battle: half again the health, and every attack becomes a Max move.
   const setMax = (c, on) => {
     if (!!c.max === on) return;
@@ -122,7 +165,8 @@ const CM = (() => {
   };
   const MAX_NAMES = {
     Normal: 'Max Strike', Fire: 'Max Flare', Water: 'Max Geyser', Grass: 'Max Overgrowth', Electric: 'Max Lightning',
-    Rock: 'Max Rockfall', Ice: 'Max Hailstorm', Shadow: 'Max Darkness', Cursed: 'Max Curse',
+    Rock: 'Max Rockfall', Ice: 'Max Hailstorm', Shadow: 'Max Darkness', Wind: 'Max Tempest', Metal: 'Max Steelstrike',
+    Mind: 'Max Mindstorm', Cursed: 'Max Curse',
   };
   // The moves a Creatamon can use right now, as move objects.
   const battleMoves = (c) => {
@@ -138,13 +182,13 @@ const CM = (() => {
   };
   const stats = (c) => {
     const s = SHAPES[c.shape], g = c.level - 1;
-    return { atk: s.atk + g, def: s.def + g, spd: s.spd + g };
+    return { atk: s.atk + g, def: s.def + g, spd: s.spd + g + (held(c).spd || 0) };
   };
   const create = (spec) => {
     const c = {
       name: spec.name, element: spec.element, shape: spec.shape,
       moves: [...spec.moves], hpCards: [...(spec.hpCards || [])],
-      level: spec.level || 1, xp: 0, art: spec.art || null,
+      level: spec.level || 1, xp: 0, art: spec.art || null, stage: spec.stage || 0, item: spec.item || null,
     };
     c.hp = maxHp(c);
     return c;
@@ -165,7 +209,7 @@ const CM = (() => {
   };
 
   // ---- Battle rules ----
-  // Mutates hp. Returns {miss} | {heal} | {domain} | {infinity} | {dmg, eff, crit}.
+  // Mutates hp. Returns {miss} | {heal} | {domain} | {infinity} | {blocked} | {dmg, eff, crit}.
   const useMove = (att, def, move, rng = Math.random) => {
     if (rng() * 100 >= move.acc) return { miss: true };
     if (move.heal) {
@@ -183,8 +227,10 @@ const CM = (() => {
     const ratio = stats(att).atk / stats(def).def;
     const scale = 0.4 + 0.06 * att.level;
     const roll = 0.85 + rng() * 0.15;
-    const crit = rng() < CRIT_RATE;
-    const dmg = Math.max(1, Math.round(move.power * ratio * scale * stab * eff * roll * (crit ? 1.5 : 1)));
+    const crit = rng() < (held(att).crit || CRIT_RATE);
+    if (held(def).block && rng() < held(def).block) return { blocked: true };
+    const boost = STAGE_DMG[att.stage || 0] * (held(att).atk || 1);
+    const dmg = Math.max(1, Math.round(move.power * ratio * scale * stab * eff * roll * boost * (crit ? 1.5 : 1)));
     def.hp = Math.max(0, def.hp - dmg);
     return { dmg, eff, crit };
   };
@@ -218,6 +264,15 @@ const CM = (() => {
     ranger_hat: cl('hat', 'Ranger Hat', 'LF'),
     miner_helmet: cl('hat', 'Miner Helmet', 'LF'),
     crown: cl('hat', 'Champion Crown', 'LF'),
+    tophat: cl('hat', 'Top Hat'),
+    headband: cl('hat', 'Headband'),
+    bucket: cl('hat', 'Bucket Hat'),
+    visor: cl('hat', 'Visor'),
+    headphones: cl('hat', 'Headphones'),
+    flower_crown: cl('hat', 'Flower Crown', 'F'),
+    cat_ears: cl('hat', 'Cat Ears', 'L'),
+    pirate: cl('hat', 'Pirate Hat', 'LF'),
+    halo: cl('hat', 'Halo', 'LF'),
     tee: cl('top', 'T-Shirt'),
     stripes: cl('top', 'Striped Shirt'),
     hoodie: cl('top', 'Hoodie'),
@@ -226,9 +281,22 @@ const CM = (() => {
     varsity: cl('top', 'Varsity Jacket', 'L'),
     scout_vest: cl('top', 'Scout Vest', 'LF'),
     champion_cape: cl('top', 'Champion Cape', 'L'),
+    tank: cl('top', 'Tank Top'),
+    polka: cl('top', 'Polka Shirt'),
+    overalls: cl('top', 'Overalls'),
+    suit: cl('top', 'Suit'),
+    poncho: cl('top', 'Poncho'),
+    puffer: cl('top', 'Puffer Jacket'),
+    kimono: cl('top', 'Kimono'),
+    labcoat: cl('top', 'Lab Coat', 'F'),
     pants: cl('bottom', 'Trousers'),
     shorts: cl('bottom', 'Shorts'),
     skirt: cl('bottom', 'Skirt'),
+    jeans: cl('bottom', 'Jeans'),
+    leggings: cl('bottom', 'Leggings'),
+    joggers: cl('bottom', 'Joggers'),
+    cargo: cl('bottom', 'Cargo Shorts'),
+    long_skirt: cl('bottom', 'Long Skirt'),
   };
 
   // ---- Species ----
@@ -277,6 +345,18 @@ const CM = (() => {
   sp('Gullwave', 'Water', 'Bird', ['splash_shot', 'scratch']);
   sp('Rivermaw', 'Water', 'Beast', ['aqua_jet', 'body_slam'], ['hp100']);
   sp('Snowpuff', 'Ice', 'Blob', ['frost_nip', 'tackle']);
+  sp('Breezlet', 'Wind', 'Bird', ['gust', 'scratch']);
+  sp('Gustail', 'Wind', 'Serpent', ['gust', 'tackle']);
+  sp('Zephyrfox', 'Wind', 'Beast', ['whirlwind', 'scratch'], ['hp30']);
+  sp('Stormkite', 'Wind', 'Bird', ['hurricane', 'whirlwind'], ['hp100']);
+  sp('Boltnut', 'Metal', 'Bug', ['rivet_toss', 'tackle']);
+  sp('Cogshell', 'Metal', 'Shell', ['rivet_toss', 'tackle'], ['hp30']);
+  sp('Ironclaw', 'Metal', 'Beast', ['iron_bash', 'scratch'], ['hp100']);
+  sp('Anviltusk', 'Metal', 'Beast', ['titan_hammer', 'iron_bash'], ['hp250']);
+  sp('Dreamote', 'Mind', 'Blob', ['brain_poke']);
+  sp('Thinkling', 'Mind', 'Bird', ['brain_poke', 'scratch']);
+  sp('Mesmoth', 'Mind', 'Bug', ['psy_wave', 'brain_poke'], ['hp30']);
+  sp('Oraclynx', 'Mind', 'Beast', ['mind_break', 'psy_wave'], ['hp100']);
   // Only trainers have these.
   sp('Magmaw', 'Fire', 'Beast', ['flame_wheel', 'body_slam'], ['hp100']);
   sp('Leviadon', 'Water', 'Shell', ['aqua_jet', 'mend'], ['hp100']);
@@ -293,13 +373,13 @@ const CM = (() => {
   // 1 meadow  2 forest  3 cave  4 flowers  5 crystals  6 water  7 snow
   const ZONE_OF = { ',': 1, ';': 2, ':': 3, '*': 4, '!': 5, '~': 6, '"': 7 };
   const WILD = {
-    1: [['Fluffin', 4], ['Emberpup', 4], ['Puddlit', 4], ['Sproutle', 4], ['Chirple', 4], ['Pebblit', 2], ['Slitherling', 2], ['Voltmite', 1]],
-    2: [['Zapwing', 4], ['Thornback', 4], ['Cinderfox', 4], ['Mossowl', 4], ['Barkadder', 4], ['Gloomoth', 4], ['Antlerox', 2], ['Frostfinch', 2], ['Duskfang', 1]],
-    3: [['Boulderon', 4], ['Tidewyrm', 4], ['Stormcrow', 4], ['Gravlet', 4], ['Echobat', 4], ['Stoneviper', 4], ['Magmite', 2], ['Glimmershell', 2], ['Cavernking', 1]],
-    4: [['Buzzlebee', 4], ['Petalwing', 4], ['Ladybop', 4], ['Nectarslug', 4], ['Honeycub', 2], ['Dewsnake', 2], ['Bloomoth', 1]],
+    1: [['Fluffin', 4], ['Emberpup', 4], ['Puddlit', 4], ['Sproutle', 4], ['Chirple', 4], ['Breezlet', 4], ['Pebblit', 2], ['Slitherling', 2], ['Dreamote', 2], ['Voltmite', 1]],
+    2: [['Zapwing', 4], ['Thornback', 4], ['Cinderfox', 4], ['Mossowl', 4], ['Barkadder', 4], ['Gloomoth', 4], ['Antlerox', 2], ['Frostfinch', 2], ['Thinkling', 2], ['Zephyrfox', 2], ['Duskfang', 1]],
+    3: [['Boulderon', 4], ['Tidewyrm', 4], ['Stormcrow', 4], ['Gravlet', 4], ['Echobat', 4], ['Stoneviper', 4], ['Boltnut', 4], ['Cogshell', 4], ['Magmite', 2], ['Glimmershell', 2], ['Ironclaw', 2], ['Cavernking', 1]],
+    4: [['Buzzlebee', 4], ['Petalwing', 4], ['Ladybop', 4], ['Nectarslug', 4], ['Gustail', 4], ['Honeycub', 2], ['Dewsnake', 2], ['Mesmoth', 2], ['Bloomoth', 1]],
     5: [['Crystalisk', 4], ['Frostmaw', 4], ['Voidling', 4], ['Shardwing', 4], ['Prismite', 2], ['Glacierback', 1], ['Umbrawyrm', 1]],
     6: [['Puddlit', 4], ['Dewsnake', 4], ['Gullwave', 4], ['Tidewyrm', 2], ['Rivermaw', 1]],
-    7: [['Snowpuff', 4], ['Frostfinch', 4], ['Glimmershell', 4], ['Crystalisk', 2], ['Frostmaw', 2], ['Glacierback', 1]],
+    7: [['Snowpuff', 4], ['Frostfinch', 4], ['Glimmershell', 4], ['Crystalisk', 2], ['Frostmaw', 2], ['Stormkite', 2], ['Oraclynx', 1], ['Glacierback', 1]],
   };
   const DEX = Object.values(SPECIES).map((m) => ({ name: m.name, element: m.element }));
 
@@ -315,7 +395,9 @@ const CM = (() => {
     if (level >= 34) add(elementMove(s.element, 3));
     extra.forEach(add);
     const hpCards = [...s.hpCards, ...(level >= 14 ? ['hp100'] : []), ...(level >= 30 ? ['hp250'] : []), ...(level >= 44 ? ['hp250'] : [])];
-    return create({ name, element: s.element, shape: s.shape, moves, hpCards, level });
+    // They come already evolved for their level.
+    const stage = level >= EVOLVE_AT[1] ? 2 : level >= EVOLVE_AT[0] ? 1 : 0;
+    return create({ name, element: s.element, shape: s.shape, moves, hpCards, level, stage });
   };
   const randInt = (a, b, rng) => a + Math.floor(rng() * (b - a + 1));
   const genWild = (habitat, levels, rng = Math.random) => {
@@ -343,7 +425,7 @@ const CM = (() => {
   return {
     ELEMENTS, STRONG, SHAPES, CARDS, TIER_NAMES, EGG, MAX_PARTY, CLOTHES, SPECIES, DEX, WILD, ZONE_OF,
     STARTER_CARDS, ENCOUNTER_RATE,
-    isEgg, setMax, battleMoves, DOMAIN_STRIKE,
+    isEgg, setMax, battleMoves, DOMAIN_STRIKE, ITEMS, held, EVOLVE_AT, STAGE_NAMES, STAGE_DMG, STAGE_HP, canEvolve, evolve,
     effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp,
     useMove, pickMove, spawn, genWild, rollDrop,
   };

@@ -1,20 +1,22 @@
 // Creatamon UI: overworld, gym puzzles, story, battles, menu, wardrobe and the Forge.
 (() => {
   const { CARDS, ELEMENTS, SHAPES, CLOTHES, MAPS, NPCS, CHESTS, TEAMS } = CM;
-  const { drawTile, drawPerson, drawProp, drawCreature, playFx } = GFX;
+  const { drawTile, drawPerson, drawProp, drawCreature, drawSpray, playFx, SPRAYS } = GFX;
+  const ITEMS = CM.ITEMS, TOTAL = CM.GYM_ORDER.length;
   const $ = (id) => document.getElementById(id);
   const $game = $('game'), $world = $('world'), $battle = $('battle'), $dialog = $('dialog');
   const $actions = $('actions'), $menu = $('menu'), $title = $('title'), $hud = $('hud');
   const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
   const SAVE_KEY = 'creatamon-save-v1';
   // The world canvas holds SCALE pixels per unit, so tiles stay 32 units but carry finer detail.
-  const TILE = 32, VIEW_W = 480, VIEW_H = 352, SCALE = 2;
+  const TILE = 32, VIEW_W = 480, VIEW_H = 352, SCALE = 3;
   const DIRS = CM.DIRS;
 
   let S = null;          // saved game state
   let P = null;          // puzzle state of the current map (not saved)
   let mode = 'title';    // title | world | busy | menu
-  let move = null;       // in-progress step {fx, fy, tx, ty, t, n}
+  let move = null;       // in-progress step {pts: tiles passed through, t: 0..1, n: steps}
+  let help = false;      // the How to play page is open
   let forge = null;      // open Forge editor {idx, draft, avail}
   let wardrobe = null;   // open character editor {isNew, draft}
   let B = null;          // current battle {me, foe}
@@ -26,15 +28,21 @@
     v: 2, map: 'world', x: CM.START.x, y: CM.START.y, dir: 'down', heal: ['world', CM.START.x, CM.START.y], surf: false,
     cards: {}, party: [], chests: {}, beaten: {}, f: {}, badges: {}, smashed: {}, solved: {}, quiz: 0,
     player: null, wardrobe: {}, seen: {},
+    items: {}, sprays: {}, sprayOwned: { star: true, smile: true }, spray: 'star', tips: {},
   });
   const save = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } };
   const load = () => {
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-      if (!s || s.v === 2) return s;
+      if (s && s.v === 2) {
+        // Saves from before items and sprays: start them off with a ball and a few potions.
+        if (!s.items) s.items = { creataball: 1, potion: 3 };
+        return { ...newState(), ...s };
+      }
+      if (!s) return s;
       // A save from before the Gym Challenge: the world is new, so the journey restarts from home,
       // but the team, cards, clothes and Creatadex come along.
-      const kept = { ...newState(), cards: s.cards || {}, party: s.party || [], player: s.player || null, wardrobe: s.wardrobe || {}, seen: s.seen || {} };
+      const kept = { ...newState(), items: { creataball: 1, potion: 3 }, cards: s.cards || {}, party: s.party || [], player: s.player || null, wardrobe: s.wardrobe || {}, seen: s.seen || {} };
       kept.party.forEach((c) => { c.hp = CM.maxHp(c); });
       kept.f.start = kept.party.length > 0 || Object.keys(kept.cards).length > 0;
       // The easter egg now needs the right element and body too; without them its bound cards fall away.
@@ -83,6 +91,15 @@
       await say(`You got a Power Card: ${cardLabel(id)}! (${CM.cardDesc(CARDS[id])})`);
     }
   };
+  const addItem = (id, n = 1) => { S.items[id] = (S.items[id] || 0) + n; };
+  const giveItems = async (ids) => {
+    for (const id of ids) {
+      addItem(id);
+      await say(`You got ${/^[aeiou]/i.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name}! (${ITEMS[id].desc})`);
+    }
+  };
+  // The first time something new comes up, explain it once.
+  const tip = async (id, lines) => { if (!S.tips[id]) { S.tips[id] = true; await sayAll(lines); } };
   const giveClothes = async (ids) => {
     for (const id of ids) {
       S.wardrobe[id] = true;
@@ -100,9 +117,10 @@
   const here = (idx, x, y) => (idx[S.map] && idx[S.map][`${x},${y}`]) || [];
   const npcAt = (x, y) => here(npcIndex, x, y).find((n) => !n.show || n.show(S));
   const chestAt = (x, y) => here(chestIndex, x, y)[0];
-  const blocked = (x, y) => !!(chestAt(x, y) || npcAt(x, y));
+  const pickupAt = (x, y) => { const c = chestAt(x, y); return c && !S.chests[`${S.map}:${x},${y}`] ? c : null; };
+  const blocked = (x, y) => !!npcAt(x, y);
   const hasFighter = () => S.party.some((c) => c.hp > 0);
-  const updateHud = () => { $('area').textContent = `${CM.areaAt(S.map, S.x, S.y).name} · ${badgeCount()}/8 badges`; };
+  const updateHud = () => { $('area').textContent = `${CM.areaAt(S.map, S.x, S.y).name} · ${badgeCount()}/${TOTAL} badges`; };
 
   function goTo(map, x, y, dir = S.dir) {
     Object.assign(S, { map, x, y, dir, surf: false });
@@ -115,7 +133,7 @@
     if (mode !== 'world') return;
     if (move) {
       move.t += dt / (130 * move.n);
-      if (move.t >= 1) { S.x = move.tx; S.y = move.ty; move = null; onStep(); }
+      if (move.t >= 1) { [S.x, S.y] = move.pts[move.pts.length - 1]; move = null; onStep(); }
       return;
     }
     const dir = keys.arrowup || keys.w ? 'up' : keys.arrowdown || keys.s ? 'down'
@@ -125,8 +143,15 @@
     const warp = CM.WARPS[`${S.map}:${S.x + DIRS[dir][0]},${S.y + DIRS[dir][1]}`];
     if (warp && warp.need && warp.need(S)) return;
     const res = CM.step(S.map, P, S, S.x, S.y, dir, blocked);
-    if (res) move = { fx: S.x, fy: S.y, tx: res.x, ty: res.y, t: 0, n: res.n };
+    if (res) move = { pts: [[S.x, S.y], ...res.path], t: 0, n: res.n };
   }
+  // Where the player is drawn right now, in tiles.
+  const where = () => {
+    if (!move) return [S.x, S.y];
+    const at = Math.min(move.n - 1e-6, Math.max(0, move.t) * move.n), i = Math.floor(at), f = at - i;
+    const [ax, ay] = move.pts[i], [bx, by] = move.pts[i + 1];
+    return [ax + (bx - ax) * f, ay + (by - ay) * f];
+  };
 
   async function onStep() {
     const m = MAPS[S.map], ch = CM.charAt(S.map, S.x, S.y);
@@ -146,7 +171,23 @@
         await talk('The heal pad hums... your Creatamon are fully restored!');
       }
     }
+    const found = pickupAt(S.x, S.y);
+    if (found) {
+      S.chests[`${S.map}:${S.x},${S.y}`] = true;
+      await run(async () => {
+        await tip('pickup', 'Sparkles on the ground are things to pick up. Just walk over them!');
+        if (found.card) await giveCards([found.card]);
+        else if (found.outfit) await giveClothes([found.outfit]);
+        else if (found.item) await giveItems([found.item]);
+        else {
+          S.sprayOwned[found.spray] = true;
+          await sayAll([`You found a spray-paint design: ${SPRAYS[found.spray]}!`, 'Pick a design in the menu, then press G to spray it on the ground in front of you.']);
+        }
+      });
+    }
     const ev = CM.arrive(S.map, P, S.x, S.y);
+    const twin = CM.teleAt(S.map, S.x, S.y);
+    if (twin) { [S.x, S.y] = twin; $world.classList.remove('shake'); void $world.offsetWidth; $world.classList.add('shake'); }
     if (ev === 'shock') {
       await talk('Bzzt! You stepped on a charged panel. The whole grid resets!');
       [S.x, S.y] = m.entry;
@@ -163,6 +204,10 @@
         if (result === 'win') {
           const drop = CM.rollDrop(area.drops, Math.random, foe.rare);
           if (drop) { await say(`The wild ${foe.name} dropped something...`); await giveCards([drop]); }
+          // Now and then they leave a potion behind, or even a Creataball.
+          const luck = Math.random();
+          if (luck < 0.07) await giveItems(['creataball']);
+          else if (luck < 0.35) await giveItems([area.lv[0] >= 44 ? 'max_potion' : area.lv[0] >= 22 ? 'super_potion' : 'potion']);
         } else if (result === 'lose') await whiteout();
       });
     }
@@ -178,7 +223,8 @@
 
   // A battle against someone. Resolves true on a win; a loss sends the player back to the heal pad.
   async function duel(name, team, opts = {}) {
-    const result = await battle(team.map((t) => CM.spawn(...t)), { trainer: name, zone: bgZone(), max: S.map.startsWith('gym_'), ...opts });
+    const foes = opts.boss ? team.map((t) => CM.spawn(...t)) : CM.makeTeam(name, team);
+    const result = await battle(foes, { trainer: name, zone: bgZone(), max: S.map.startsWith('gym_'), ...opts });
     $battle.hidden = true;
     if (result === 'win') return true;
     await whiteout();
@@ -212,28 +258,19 @@
   async function interact() {
     if (move) return;
     const tx = S.x + DIRS[S.dir][0], ty = S.y + DIRS[S.dir][1], k = `${tx},${ty}`;
-    const chest = chestAt(tx, ty), npc = npcAt(tx, ty);
-    if (chest) {
-      const key = `${S.map}:${k}`;
-      if (S.chests[key]) return talk('The chest is empty.');
-      S.chests[key] = true;
-      return run(async () => {
-        await say('You opened the chest!');
-        if (chest.outfit) await giveClothes([chest.outfit]); else await giveCards([chest.card]);
-      });
-    }
+    const npc = npcAt(tx, ty);
     if (npc) return run(() => meet(npc));
     const ch = CM.charAt(S.map, tx, ty);
     const warp = CM.WARPS[`${S.map}:${k}`], why = warp && warp.need && warp.need(S);
     if (why) return talk(why);
-    if (P.blocks[k]) return talk(P.blocks[k] === 'o' ? 'A Fluffin from the gym flock. Walk into it to nudge it along.' : 'A heavy boulder. Walk into it to push it.');
+    if (P.blocks[k]) return talk({ o: 'A Fluffin from the gym flock. Walk into it to nudge it along.', C: 'A steel crate. Walk into it to push it.' }[P.blocks[k]] || 'A heavy boulder. Walk into it to push it.');
     if (ch === 'x' && !S.smashed[`${S.map}:${k}`]) {
       return fieldMove('rock_smash', 'The rock is riddled with cracks.', () => { S.smashed[`${S.map}:${k}`] = true; });
     }
     if (ch === '~' && !S.surf) {
       return fieldMove('surf', 'The water is deep and the current is strong.', () => {
         S.surf = true;
-        move = { fx: S.x, fy: S.y, tx, ty, t: 0, n: 1 };
+        move = { pts: [[S.x, S.y], [tx, ty]], t: 0, n: 1 };
       });
     }
     if (ch === 'B') {
@@ -248,6 +285,16 @@
         ? 'Behind the broken mural stand statues far older: two young heroes, and at their sides two great wolves, one bearing a blade, one a guard.'
         : 'A grand mural of two young heroes facing a storm in the sky.');
     }
+  }
+
+  // Spray the chosen design on the ground ahead. Spraying over the same design cleans it off.
+  const SPRAYABLE = '.=cSs_F';
+  function spray() {
+    if (move) return;
+    const tx = S.x + DIRS[S.dir][0], ty = S.y + DIRS[S.dir][1], key = `${S.map}:${tx},${ty}`;
+    if (!SPRAYABLE.includes(CM.charAt(S.map, tx, ty)) || blocked(tx, ty) || pickupAt(tx, ty)) return talk('There is no flat ground to spray on there.');
+    if (S.sprays[key] === S.spray) delete S.sprays[key]; else S.sprays[key] = S.spray;
+    save();
   }
 
   function resetPuzzle() {
@@ -273,14 +320,17 @@
     if (!b.Grass) return 'Head west from Kilnford through Gritstone Mine to the Grass gym in Furrowfield.';
     if (!b.Water) return 'Cross the bridge north of Furrowfield to the Water gym in Brinemouth.';
     if (!b.Fire) return 'Take Brinecut Tunnel east of Brinemouth back to Kilnford and its Fire gym.';
+    if (!b.Wind) return 'Cross the Windswept Steppe, south off Route 3, to the Wind gym in Galeholt.';
     if (!b.Rock) return 'Go east through Anvilgate and along Route 6 to the Rock gym in Cairnside.';
     if (!f.mural) return 'Something crashed by the old mural in Cairnside. Take a look.';
     if (!b.Electric) return 'Cross the Gloamwood, south off Route 6, to the Electric gym in Lumenlea.';
+    if (!b.Metal) return 'Climb the Ironway, north off the Forgeway, to the Metal gym in Steelspire. Bring Rock Smash.';
     if (!f.rival3) return 'Finn is waiting at the north gate of Anvilgate.';
     if (!b.Ice) return 'Follow Route 7 north from Anvilgate to the Ice gym in Frosthollow.';
     if (!f.surf) return 'Talk to Wren by the Hero\'s Bath in Frosthollow.';
     if (!b.Shadow) return 'Surf across the river on Route 9, east of Frosthollow, to the Shadow gym in Thornmuth.';
-    if (!b.Normal) return 'Return to Anvilgate for the eighth and final badge.';
+    if (!b.Mind) return 'Take Route 14 east out of Thornmuth to the Mind gym in Reverie.';
+    if (!b.Normal) return 'Return to Anvilgate for the final badge.';
     if (!f.semis) return 'Take Route 10 south from Anvilgate to Summit City and enter the Champion Cup.';
     if (!f.opaline) return 'Champion Vex is at Sterling Tower in the east of Summit City.';
     if (!f.night) return 'Win the Champion Cup finals at the Summit City stadium.';
@@ -295,14 +345,18 @@
     Grass: ['Wren: Nicely done! Did you see the hill carving outside? A giant in a storm of black cloud. The old stories call it the Blackest Night.',
       'Wren: Brinemouth and the Water gym are north, over the bridge.'],
     Water: ['Chairman Sterling was watching from the stands. "A splendid match! Do come and see me in Brinemouth."'],
-    Fire: ['Three badges! The League staff at Anvilgate, east of Kilnford, will let you through now.'],
+    Fire: ['Three badges! The Windswept Steppe is open to you now: head west along Route 3, then south. Galeholt lies beyond it.'],
+    Wind: ['Four badges! The League staff at Anvilgate, east of Kilnford, will let you through now.'],
+    Metal: ['Leader Forge: Finn came through here asking after you. Said he would wait at the north gate of Anvilgate.'],
+    Mind: ['Leader Sibyl: One badge left. I see a great hall in Anvilgate, and five people asking you questions.'],
     Rock: ['CRASH! Something shakes the cliffs outside. It came from the old mural.'],
     Electric: ['Madame Ohm: I have been looking for a successor, you know. That sulky boy Cyril has just the right amount of spite.',
-      'Madame Ohm: Off you go, dearie. I have an apprentice to terrorise.'],
+      'Madame Ohm: Off you go, dearie. Steelspire next: north off the Forgeway. Mind the Ironway, it is all rock.'],
     Ice: ['Wren sent word: she has found something at the Hero\'s Bath, here in Frosthollow.'],
     Shadow: ['As you step outside, the ground shudders. Far off, a red glow pulses over Anvilgate, then fades.',
-      'Rook: That is the third quake this week. Something is wrong at the Energy Plant.'],
-    Normal: ['Eight badges! Route 10, south of Anvilgate, is open to you. Summit City and the Champion Cup await.'],
+      'Rook: That is the third quake this week. Something is wrong at the Energy Plant.',
+      'Rook: Team Holler will let you out the east side now. Reverie and its gym are that way.'],
+    Normal: ['Every badge in Galdra! Route 10, south of Anvilgate, is open to you. Summit City and the Champion Cup await.'],
   };
 
   async function leader(npc) {
@@ -312,8 +366,10 @@
     if (!await duel(gm.name, gm.team, { zone: 'in', foeMax: true })) return;
     S.badges[gm.el] = true;
     S.solved[S.map] = true;
-    await sayAll([`${gm.name}: ${gm.post}`, `You received the ${gm.el} Badge! That makes ${badgeCount()} of 8.`]);
+    await sayAll([`${gm.name}: ${gm.post}`, `You received the ${gm.el} Badge! That makes ${badgeCount()} of ${TOTAL}.`]);
     await giveCards(gm.reward);
+    const n = CM.GYM_ORDER.indexOf(gm.el), brew = n >= 8 ? 'max_potion' : n >= 3 ? 'super_potion' : 'potion';
+    await giveItems(['creataball', brew, brew]);
     await sayAll(AFTER_BADGE[gm.el]);
   }
 
@@ -413,15 +469,15 @@
     },
     guard_r2: () => say('League Staff: Route 2 leads to the Wildlands and Kilnford. Only endorsed challengers may pass.'),
     gate_summit: async () => {
-      if (badgeCount() < 8) return say('Gatekeeper: Beyond this gate lies Summit City, home of the Champion Cup. It opens only for holders of all eight badges.');
-      await say('Gatekeeper: Eight badges! The gate between Wedgemoor and Summit City is open to you now.');
+      if (badgeCount() < TOTAL) return say(`Gatekeeper: Beyond this gate lies Summit City, home of the Champion Cup. It opens only for holders of all ${TOTAL} badges.`);
+      await say('Gatekeeper: Every badge! The gate between Wedgemoor and Summit City is open to you now.');
       flag('shortcut');
     },
     staff: async () => {
       await sayAll(['League Staff: Endorsed challengers, this way! The opening ceremony is starting.',
         'You walk out onto the pitch. The crowd roars.',
-        'Chairman Sterling: Welcome, one and all, to the Gym Challenge! Eight gyms. Eight badges. One Champion Cup!',
-        'One by one the Gym Leaders take the field: Thatch, Marina, Cinder, Gneiss, Madame Ohm, Rime and Brann. The Thornmuth Leader has not turned up.',
+        `Chairman Sterling: Welcome, one and all, to the Gym Challenge! ${TOTAL} gyms. ${TOTAL} badges. One Champion Cup!`,
+        'One by one the Gym Leaders take the field: Thatch, Marina, Cinder, Zephyra, Gneiss, Madame Ohm, Forge, Rime, Sibyl and Brann. The Thornmuth Leader has not turned up.',
         'Cyril: So you are the Champion\'s pick. I was endorsed by the Chairman himself. Try not to get in my way.',
         'Nettie: Ignore him. I am Nettie. Sorry about the noisy lot in pink, that is Team Holler. They... sort of follow me around.',
         'Wren: I am Wren, Prof. Willow\'s granddaughter. The mine to the west is full of cracked rocks, so take this.']);
@@ -449,7 +505,10 @@
       'Wren: Gran says it shows the Blackest Night, when something terrible nearly ended Galdra. Two heroes stopped it. Or so the story goes.']),
     sterling_brine: () => sayAll(['Chairman Sterling: Ah, our promising challenger! I watched your match with Marina.',
       'Chairman Sterling: Do you know how Galdra is powered? In a thousand years the energy will run dry. A thousand years is no time at all.']),
-    guard_anvil: () => say('League Staff: Anvilgate admits only challengers holding three badges.'),
+    guard_anvil: () => say('League Staff: Anvilgate admits only challengers holding four badges.'),
+    guard_steppe: () => say('League Staff: The Windswept Steppe is no place for beginners. Three badges, then we talk.'),
+    guard_iron: () => say('League Staff: The Ironway is closed to anyone with fewer than six badges. Falling rocks, you understand.'),
+    holler_east: () => say('Team Holler Grunt: Nobody leaves Thornmuth by the east road till our Rook has had his match with you!'),
     wren_vault: async () => {
       await sayAll(['Wren: The Anvilgate vault holds four old tapestries. Two youths see a falling star. Disaster comes. They take up a blade and a guard. They are crowned.',
         'Wren: Everyone says ONE hero saved Galdra. So why do the tapestries show two?']);
@@ -458,9 +517,9 @@
     sterling_anvil: () => sayAll(['Chairman Sterling: This Energy Plant keeps every light in Galdra burning.',
       'Champion Vex: And it can wait until after the Cup, Chairman.', 'Chairman Sterling: Can it, though?']),
     finn_r7: async () => {
-      if (badgeCount() < 5) {
+      if (badgeCount() < 7) {
         return sayAll(['Finn: Cyril beat me. Said I was dragging my brother\'s name through the mud.',
-          'Finn: I need to work out what kind of trainer I am. Come back with five badges and I will give you a proper battle.']);
+          'Finn: I need to work out what kind of trainer I am. Come back with seven badges and I will give you a proper battle.']);
       }
       await say('Finn: I have stopped trying to be my brother. This is MY team now. Have at you!');
       if (!await duel('Finn', TEAMS.finn3)) return;
@@ -468,7 +527,7 @@
       await giveCards(['hp250']);
       flag('rival3');
     },
-    guard_r10: () => say('League Staff: Route 10 leads to Summit City and the Champion Cup. Eight badges, no exceptions.'),
+    guard_r10: () => say(`League Staff: Route 10 leads to Summit City and the Champion Cup. All ${TOTAL} badges, no exceptions.`),
     cyril_mural: async () => {
       await sayAll(['A huge Creatamon is ramming the ancient mural. Cyril is urging it on.',
         'Cyril: There are star shards behind this wall. The Chairman needs them. Stay out of it!']);
@@ -597,14 +656,37 @@
     if (npc.team) return trainer(npc);
   }
 
+  // The controls, shown at the very start and again from the menu's How to play button.
+  const HOW_TO = [
+    ['Move', 'Arrow keys or W A S D.'],
+    ['Talk, read, use', 'Face something and press Enter (or Space, or Z). The same key moves text along.'],
+    ['Menu', 'Press M or Esc. Your next goal is at the top; your party, Forge, Bag, Wardrobe and sprays are below it.'],
+    ['Forge', 'Creatamon are built, not caught. Slot move cards and health cards into one. A new Creatamon costs a Creataball; rebuilding is free.'],
+    ['Battle', 'Pick a move. Matching a move to your Creatamon\'s element hits harder, and so does hitting a weakness. Bag uses a potion; Switch swaps Creatamon.'],
+    ['Grow', 'Winning earns XP. At levels 16 and 36 a Creatamon can Evolve from the menu for free health and stronger attacks. Give each one an item to hold.'],
+    ['Pick-ups', 'Sparkles on the ground are cards, items, clothes and spray designs. Walk over them.'],
+    ['Heal', 'Step on a pink heal pad to restore your whole party. If everyone faints you return to the last pad you used.'],
+    ['Gyms', 'Each town\'s gym has a puzzle before its Leader. Press R to start a puzzle over. In gyms you can use Max Mode once per battle.'],
+    ['Field moves', 'Rock Smash breaks cracked rocks and Surf crosses water: slot the card on a Creatamon, face the obstacle and press Enter.'],
+    ['Spray paint', 'Press G to spray your chosen design on the ground in front of you.'],
+  ];
   async function intro() {
     await run(async () => {
+      await sayAll(['Welcome to Creatamon! A quick word on how to play.',
+        'Move with the arrow keys or W A S D. Press Enter to talk to people and to move text like this along.',
+        'Press M to open the menu. It always tells you where to go next, and has a How to play page if you forget anything.',
+        'Sparkles on the ground are things to pick up: walk over them. Pink pads heal your Creatamon.',
+        'That is all you need for now. The rest is explained as you meet it.']);
       await sayAll([`Finn: ${you()}! There you are! My big brother is home. THE Champion Vex!`,
         'Champion Vex: So this is the friend Finn never stops talking about.',
         'Champion Vex: In Galdra, Creatamon are not caught. They are created, forged from Power Cards.',
         'Move cards teach a Creatamon its attacks. Health cards make it tougher.',
         `Champion Vex: I brought a starter set for each of you. Go on, ${GENDERS[S.player.gender].title}: forge your very first Creatamon!`]);
       CM.STARTER_CARDS.forEach((id) => addCard(id));
+      addItem('creataball', 2);
+      addItem('potion', 3);
+      await sayAll(['You got 6 Power Cards, 2 Creataballs and 3 Potions!',
+        'Champion Vex: A Creataball is what a new Creatamon is forged inside. Each new one you make uses up a ball, so spend them wisely.']);
       flag('start');
       openMenu();
       openForge(null);
@@ -668,6 +750,7 @@
     await animate(who, r.heal != null ? 'heal' : m.element);
     updateBars();
     if (r.heal != null) return say(`${shownName(att)} recovered ${r.heal} HP!`);
+    if (r.blocked) return say(`${shownName(def)}'s ${ITEMS[def.item].name} nullified the hit!`);
     if (r.infinity) {
       flash($(`${who}Sprite`));
       return say(`The attack stops dead in the infinity around ${def.name}! ${shownName(att)} takes ${r.infinity} damage instead!`);
@@ -737,10 +820,12 @@
       const moves = list.map((m, i) => `<button data-move="${i}" style="border-left-color:${ELEMENTS[m.element].color}">
           <b>${m.name}</b><small>${CM.cardDesc(m)}</small></button>`).join('');
       const canSwitch = S.party.some((c) => c.hp > 0 && c !== B.me);
-      const max = canMax() ? '<button class="wide maxbtn" data-act="max"><b>Max Mode</b><small>Grow huge for this battle</small></button>' : '';
-      const d = await pickButton(`<div class="moves">${moves}</div><div class="side ${max ? 'three' : ''}">${max}
-        <button data-act="switch" ${canSwitch ? '' : 'disabled'}><b>Switch</b><small>Swap Creatamon</small></button>
-        <button data-act="run"><b>Run</b><small>Flee the battle</small></button></div>`);
+      const max = canMax() ? '<button class="wide maxbtn" data-act="max"><b>Max Mode</b></button>' : '';
+      const usable = Object.keys(ITEMS).some((id) => (ITEMS[id].heal || ITEMS[id].revive) && S.items[id] > 0);
+      const d = await pickButton(`<div class="moves">${moves}</div><div class="side">${max}
+        <button data-act="switch" ${canSwitch ? '' : 'disabled'}><b>Switch</b></button>
+        <button data-act="bag" ${usable ? '' : 'disabled'}><b>Bag</b></button>
+        <button class="wide" data-act="run"><b>Run</b></button></div>`);
       if (d.move) return { type: 'move', move: list[+d.move] };
       if (d.act === 'max') {
         if (!CM.isEgg(B.me)) B.maxUsed = true;
@@ -748,12 +833,36 @@
       } else if (d.act === 'switch') {
         const idx = await chooseParty(false);
         if (idx != null) return { type: 'switch', idx };
+      } else if (d.act === 'bag') {
+        const use = await chooseItem();
+        if (use) return { type: 'item', ...use };
       } else if (!canRun) {
         await say("There's no running from this battle!");
       } else {
         return { type: 'run' };
       }
     }
+  }
+
+  // Pick a potion or revive from the Bag, then who gets it. Returns { id, idx } or null if the player backs out.
+  async function chooseItem() {
+    const ids = Object.keys(ITEMS).filter((id) => (ITEMS[id].heal || ITEMS[id].revive) && S.items[id] > 0);
+    const a = await pickButton(`<div class="moves">${ids.map((id) => `<button data-id="${id}" style="border-left-color:#f08aa0">
+      <b>${ITEMS[id].name} ×${S.items[id]}</b><small>${ITEMS[id].desc}</small></button>`).join('')}</div>
+      <div class="side"><button class="wide" data-back="1"><b>Back</b></button></div>`);
+    if (a.back) return null;
+    const it = ITEMS[a.id];
+    const ok = (c) => (it.revive ? c.hp <= 0 : c.hp > 0 && c.hp < CM.maxHp(c));
+    const b = await pickButton(`<div class="moves">${S.party.map((c, i) => `<button data-idx="${i}" style="border-left-color:${ELEMENTS[c.element].color}" ${ok(c) ? '' : 'disabled'}>
+      <b>${esc(c.name)}</b> Lv ${c.level}<small>${c.hp} / ${CM.maxHp(c)} HP</small></button>`).join('')}</div>
+      <div class="side"><button class="wide" data-back="1"><b>Back</b></button></div>`);
+    return b.back ? null : { id: a.id, idx: +b.idx };
+  }
+  function useItem(id, c) {
+    const it = ITEMS[id], full = CM.maxHp(c), before = c.hp;
+    S.items[id]--;
+    c.hp = it.revive ? Math.floor(full / 2) : Math.min(full, c.hp + it.heal);
+    return c.hp - before;
   }
 
   async function grantXp(me, foe, bonus) {
@@ -765,6 +874,7 @@
     if (levelled) {
       renderBattle();
       for (let l = from + 1; l <= me.level; l++) await say(`${me.name} grew to level ${l}!`);
+      if (CM.canEvolve(me)) await say(`${me.name} is ready to evolve! Open the menu (M) after the battle.`);
     }
   }
 
@@ -785,7 +895,7 @@
     }
   }
   async function fight(foes, opts) {
-    S.seen[B.foe.name] = true;
+    S.seen[B.foe.species || B.foe.name] = true;
     $battle.className = `z${opts.zone}`;
     $battle.hidden = false;
     renderBattle();
@@ -803,6 +913,8 @@
         : B.foe.rare ? `Whoa! A rare ${B.foe.name} appeared!` : `A wild ${B.foe.name} appeared!`);
     }
     await say(`Go, ${B.me.name}!`);
+    await tip('battle', ['Choose a move on the left. A move hits harder if it matches your Creatamon\'s element, or if the foe is weak to it.',
+      'On the right: Switch swaps Creatamon, Bag uses a potion, Run flees a wild battle.']);
 
     // Deals with anyone who has fainted. Returns 'win' | 'lose', 'next' if someone new came out, or null.
     const settle = async () => {
@@ -813,7 +925,7 @@
         const next = foes.find((f) => f.hp > 0);
         if (!next) return 'win';
         B.foe = next;
-        S.seen[next.name] = true;
+        S.seen[next.species || next.name] = true;
         renderBattle();
         await say(`${opts.trainer} sent out ${next.name}!`);
         await lastStand();
@@ -845,6 +957,12 @@
         B.me = S.party[act.idx];
         renderBattle();
         await say(`Go, ${B.me.name}!`);
+      } else if (act.type === 'item') {
+        const target = S.party[act.idx], gained = useItem(act.id, target);
+        await say(`${you()} used ${/^[aeiou]/i.test(ITEMS[act.id].name) ? 'an' : 'a'} ${ITEMS[act.id].name}.`);
+        if (target === B.me) await animate('me', 'heal');
+        updateBars();
+        await say(ITEMS[act.id].revive ? `${target.name} is back on its feet!` : `${target.name} recovered ${gained} HP!`);
       } else {
         myMove = act.move;
       }
@@ -880,6 +998,16 @@
         await domainTick();
         result = await settle();
       }
+      // Held items that mend their holder a little every turn.
+      if (!result) {
+        for (const who of ['me', 'foe']) {
+          const c = B[who], regen = CM.held(c).regen;
+          if (!regen || c.hp <= 0 || c.hp >= CM.maxHp(c)) continue;
+          c.hp = Math.min(CM.maxHp(c), c.hp + Math.ceil(CM.maxHp(c) * regen));
+          updateBars();
+          await say(`${shownName(c)}'s ${ITEMS[c.item].name} restored a little HP.`);
+        }
+      }
       if (result === 'win' || result === 'lose') return result;
     }
   }
@@ -901,20 +1029,29 @@
   }
   function closeMenu() {
     forge = wardrobe = null;
+    help = false;
     $menu.hidden = true;
     mode = 'world';
     save();
   }
 
   function renderMenu() {
+    if (help) return renderHelp();
     if (wardrobe) return renderWardrobe();
     if (forge) return renderForge();
+    const heldItems = Object.keys(ITEMS).filter((id) => ITEMS[id].held);
+    // An item can be given if there is a spare one that nobody else is holding.
+    const spare = (id) => (S.items[id] || 0) - S.party.filter((c) => c.item === id).length;
     const party = S.party.map((c, i) => `
       <div class="mon">
         <canvas data-sprite="${i}" width="96" height="96"></canvas>
-        <div><b>${esc(c.name)}</b> Lv ${c.level} <small>· ${c.element} ${c.shape} · ${c.hp} / ${CM.maxHp(c)} HP · ${c.xp}/${CM.xpToNext(c.level)} XP</small><br>
-          <small>${c.moves.map((id) => CARDS[id].name).join(', ')}${c.hpCards.length ? ' · ' + c.hpCards.map((id) => CARDS[id].name).join(', ') : ''}</small></div>
+        <div><b>${esc(c.name)}</b> Lv ${c.level} <small>· ${CM.STAGE_NAMES[c.stage || 0]} ${c.element} ${c.shape} · ${c.hp} / ${CM.maxHp(c)} HP · ${c.xp}/${CM.xpToNext(c.level)} XP</small><br>
+          <small>${c.moves.map((id) => CARDS[id].name).join(', ')}${c.hpCards.length ? ' · ' + c.hpCards.map((id) => CARDS[id].name).join(', ') : ''}</small><br>
+          <small>Holding: <select data-give="${i}"><option value="">nothing</option>${heldItems.filter((id) => c.item === id || spare(id) > 0).map((id) =>
+    `<option value="${id}" ${c.item === id ? 'selected' : ''}>${ITEMS[id].name}</option>`).join('')}</select>
+          ${c.item ? ITEMS[c.item].desc : (c.stage || 0) < 2 ? `Evolves at level ${CM.EVOLVE_AT[c.stage || 0]}` : ''}</small></div>
         <div class="btns">
+          ${CM.canEvolve(c) ? `<button class="plain evolve" data-a="evolve" data-i="${i}">Evolve!</button>` : ''}
           ${i ? `<button class="plain" data-a="lead" data-i="${i}">Make lead</button>` : ''}
           <button class="plain" data-a="edit" data-i="${i}">Rebuild</button>
           <button class="plain" data-a="dismantle" data-i="${i}">Dismantle</button>
@@ -923,24 +1060,46 @@
     const ids = sortedCards(S.cards);
     $menu.innerHTML = `
       <header><h2>${esc(S.player.name)}'s Creatamon</h2>
-        <span><button data-a="wardrobe">Wardrobe</button> <button data-a="close">Close (Esc)</button></span></header>
+        <span><button data-a="howto">How to play</button> <button data-a="wardrobe">Wardrobe</button> <button data-a="close">Close (Esc)</button></span></header>
       <p class="goal"><b>Next:</b> ${esc(objective())}</p>
       <div class="badges">${CM.GYM_ORDER.map((el) => `<span class="${S.badges[el] ? 'won' : ''}" style="--c:${ELEMENTS[el].color}" title="${el} Badge">${el}</span>`).join('')}</div>
       <h3>Party (${S.party.length}/${CM.MAX_PARTY})</h3>
       ${party || '<p class="empty">No Creatamon yet. Forge one from your Power Cards!</p>'}
-      <button class="plain primary" data-a="new" ${S.party.length >= CM.MAX_PARTY ? 'disabled' : ''}>＋ Forge a new Creatamon</button>
+      <button class="plain primary" data-a="new" ${S.party.length >= CM.MAX_PARTY || !S.items.creataball ? 'disabled' : ''}>＋ Forge a new Creatamon (uses 1 Creataball, you have ${S.items.creataball || 0})</button>
+      <h3>Bag</h3>
+      <div class="dex">${Object.keys(ITEMS).filter((id) => S.items[id] > 0).map((id) =>
+    `<span title="${ITEMS[id].desc}"><b>${ITEMS[id].name}</b> ×${S.items[id]} <small>${ITEMS[id].desc}</small></span>`).join('') || '<p class="empty">Empty.</p>'}</div>
+      <h3>Spray paint · press G to spray what you face</h3>
+      <div class="sprays">${Object.keys(SPRAYS).map((id) => (S.sprayOwned[id]
+    ? `<button class="${S.spray === id ? 'on' : ''}" data-spray="${id}" title="${SPRAYS[id]}"><canvas data-spraycv="${id}" width="64" height="64"></canvas></button>`
+    : '<button disabled title="Not found yet">?</button>')).join('')}</div>
       <h3>Unused Power Cards</h3>
-      <div class="cards">${ids.map((id) => cardHTML(id, S.cards[id], '', 'div')).join('') || '<p class="empty">None. Look for chests and battle wild Creatamon.</p>'}</div>
+      <div class="cards">${ids.map((id) => cardHTML(id, S.cards[id], '', 'div')).join('') || '<p class="empty">None. Look for sparkles and battle wild Creatamon.</p>'}</div>
       <h3>Creatadex (${CM.DEX.filter((m) => S.seen[m.name]).length}/${CM.DEX.length} seen)</h3>
       <div class="dex">${CM.DEX.map((m) => (S.seen[m.name]
     ? `<span style="border-color:${ELEMENTS[m.element].color}" title="${m.element}">${m.name}</span>`
     : '<span class="unseen">???</span>')).join('')}</div>`;
     $menu.querySelectorAll('[data-sprite]').forEach((cv) => drawCreature(cv, S.party[cv.dataset.sprite], false));
+    $menu.querySelectorAll('[data-spraycv]').forEach((cv) => { const g = cv.getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0); drawSpray(g, cv.dataset.spraycv, 0, 0); });
   }
+  function renderHelp() {
+    $menu.innerHTML = `
+      <header><h2>How to play</h2><button data-a="cancel">Back</button></header>
+      <dl class="howto">${HOW_TO.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+  }
+  // Giving or taking a held item.
+  $menu.addEventListener('change', (e) => {
+    const sel = e.target.closest('select[data-give]');
+    if (!sel) return;
+    S.party[+sel.dataset.give].item = sel.value || null;
+    save();
+    renderMenu();
+  });
 
   const GRID = 32;
-  const PALETTE = ['#1c1c28', '#ffffff', '#9a9a9a', '#e0483c', '#f47a45', '#f6d643', '#72cc5c', '#2f7a2c',
-    '#55a8ee', '#1f5f9e', '#9b3fd6', '#f08aa0', '#f3c9a0', '#8a5a2b'];
+  const PALETTE = ['#1c1c28', '#5a5a6e', '#9a9a9a', '#d8d8d8', '#ffffff', '#8c231b', '#e0483c', '#f47a45',
+    '#f5b942', '#f6d643', '#fff3a8', '#2f7a2c', '#72cc5c', '#b4e6c6', '#1f5f9e', '#55a8ee',
+    '#bfe3fb', '#5b3fa8', '#9b3fd6', '#f29ad0', '#f08aa0', '#f3c9a0', '#8a5a2b', '#3a2412'];
   const isEgg = CM.isEgg;
   // Secret cards come and go with the name; they never touch the card collection.
   function syncEgg(draft) {
@@ -958,7 +1117,7 @@
       avail: { ...S.cards },
       // look: auto (generated) | draw (pixel editor) | upload (the player's own image)
       look: !src || !src.art ? 'auto' : up ? 'upload' : 'draw', upload: up ? src.art : null,
-      tool: 'pen', color: PALETTE[0],
+      tool: 'pen', color: PALETTE[0], size: 1, mirror: false, undo: [],
       draft: src
         ? { name: src.name, element: src.element, shape: src.shape, moves: [...src.moves], hpCards: [...src.hpCards] }
         : { name: '', element: 'Normal', shape: 'Blob', moves: [], hpCards: [] },
@@ -980,11 +1139,16 @@
       const art = forge.look === 'upload' ? forge.upload : null;
       return drawCreature(cv, { ...forge.draft, name: forge.draft.name.trim(), level: forgeLevel(), art, artUp: true }, false);
     }
-    const g = cv.getContext('2d');
+    const g = cv.getContext('2d'), cell = cv.width / GRID;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, cv.width, cv.height);
     g.imageSmoothingEnabled = false;
     g.drawImage(forge.pix, 0, 0, cv.width, cv.height);
+    // A faint grid to count squares by, with the middle marked when mirroring.
+    g.fillStyle = '#00000014';
+    for (let i = 1; i < GRID; i++) { g.fillRect(i * cell, 0, 1, cv.height); g.fillRect(0, i * cell, cv.width, 1); }
+    g.fillStyle = forge.mirror ? '#e0483c' : '#00000030';
+    g.fillRect(cv.width / 2 - 1, 0, 2, cv.height);
   }
   function floodFill(g, x, y, hex) {
     const img = g.getImageData(0, 0, GRID, GRID), p = img.data;
@@ -1002,14 +1166,42 @@
     }
     g.putImageData(img, 0, 0);
   }
+  // Remember the picture so the next change can be undone.
+  function snapshot() {
+    forge.undo.push(forge.pix.getContext('2d').getImageData(0, 0, GRID, GRID));
+    if (forge.undo.length > 40) forge.undo.shift();
+  }
   function stroke(e) {
     const cv = e.currentTarget, g = forge.pix.getContext('2d');
     const x = Math.floor(e.offsetX / cv.clientWidth * GRID), y = Math.floor(e.offsetY / cv.clientHeight * GRID);
     if (x < 0 || y < 0 || x >= GRID || y >= GRID) return;
-    if (forge.tool === 'erase') g.clearRect(x, y, 1, 1);
-    else if (forge.tool === 'fill') floodFill(g, x, y, forge.color);
-    else { g.fillStyle = forge.color; g.fillRect(x, y, 1, 1); }
+    if (forge.tool === 'pick') {
+      const [r, gg, b, a] = g.getImageData(x, y, 1, 1).data;
+      if (a) { forge.color = `#${[r, gg, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`; forge.tool = 'pen'; renderForge(); }
+      return;
+    }
+    // The brush is a square of `size`; mirroring repeats it on the other half.
+    const o = Math.floor((forge.size - 1) / 2);
+    for (const bx of forge.mirror ? [x - o, GRID - 1 - x - (forge.size - 1 - o)] : [x - o]) {
+      if (forge.tool === 'erase') g.clearRect(bx, y - o, forge.size, forge.size);
+      else if (forge.tool === 'fill') floodFill(g, Math.max(0, Math.min(GRID - 1, bx + o)), y, forge.color);
+      else { g.fillStyle = forge.color; g.fillRect(bx, y - o, forge.size, forge.size); }
+    }
     paintPreview();
+  }
+  // Copies the generated look into the editor as something to draw over.
+  function stampAuto() {
+    const tmp = document.createElement('canvas');
+    tmp.width = tmp.height = 128;
+    drawCreature(tmp, { ...forge.draft, name: '', level: forgeLevel(), art: null, stage: 2 }, false);
+    const g = forge.pix.getContext('2d');
+    g.clearRect(0, 0, GRID, GRID);
+    g.imageSmoothingEnabled = true;
+    g.drawImage(tmp, 0, 0, GRID, GRID);
+    // Hard edges only: a pixel is either there or not.
+    const img = g.getImageData(0, 0, GRID, GRID);
+    for (let i = 3; i < img.data.length; i += 4) img.data[i] = img.data[i] > 110 ? 255 : 0;
+    g.putImageData(img, 0, 0);
   }
 
   // Shrinks the chosen picture so it stays small in the save file.
@@ -1049,8 +1241,14 @@
       <small class="empty">Any picture from your device. See-through PNGs facing left look best.</small>`
       : forge.look !== 'draw' ? '' : `
       <div class="palette">${PALETTE.map((c) => `<button data-color="${c}" class="${c === forge.color ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div>
-      <div class="pick">${pick('tool', ['pen', 'fill', 'erase'], forge.tool, () => 'Tool')}<button class="plain" data-a="clearart">clear</button></div>
-      <small class="empty">Draw it facing left.</small>`;
+      <label class="anycolor">Any colour <input type="color" id="fcolor" value="${forge.color}"></label>
+      <div class="pick">${pick('tool', ['pen', 'fill', 'erase', 'pick'], forge.tool, (n) => ({ pen: 'Draw', fill: 'Fill an area', erase: 'Rub out', pick: 'Pick a colour from the picture' }[n]))}</div>
+      <div class="pick">${[1, 2, 3].map((n) => `<button class="plain ${forge.size === n ? 'on' : ''}" data-size="${n}" title="Brush size">${['small', 'medium', 'big'][n - 1]}</button>`).join('')}
+        <button class="plain ${forge.mirror ? 'on' : ''}" data-a="mirror" title="Draw both halves at once">mirror</button></div>
+      <div class="pick"><button class="plain" data-a="undo" ${forge.undo.length ? '' : 'disabled'}>undo</button>
+        <button class="plain" data-a="stamp" title="Copy the generated look in, then change it">start from auto look</button>
+        <button class="plain" data-a="clearart">clear</button></div>
+      <small class="empty">Draw it facing left. Hold and drag to paint.</small>`;
     const near = draft.name.trim() === CM.EGG.name ? '<small class="secret">✦ The name stirs something, but this body is wrong for it...</small>' : '';
     const look = egg ? '<small class="secret">✦ A cursed presence answers to that name...</small>' : `${near}
       <div class="pick">${[['auto', 'Auto look'], ['draw', 'Draw my own'], ['upload', 'Upload image']].map(([v, text]) =>
@@ -1058,17 +1256,18 @@
     const ids = sortedCards(avail);
     $menu.innerHTML = `
       <header><h2>The Forge · ${idx == null ? 'new Creatamon' : 'rebuild'}</h2><button data-a="cancel">Cancel</button></header>
-      <div class="forge">
+      <div class="forge ${drawingNow() ? 'wide' : ''}">
         <div class="left">
-          <canvas id="preview" width="160" height="160" class="${drawingNow() ? 'drawing' : ''}"></canvas>
+          <canvas id="preview" width="${drawingNow() ? 512 : 160}" height="${drawingNow() ? 512 : 160}" class="${drawingNow() ? 'drawing' : ''}"></canvas>
           ${look}
           <input id="fname" maxlength="12" placeholder="Name it..." value="${esc(draft.name)}">
           <div class="pick">${pick('el', Object.keys(ELEMENTS).filter((n) => !ELEMENTS[n].hidden), draft.element,
     (n) => `Strong vs ${CM.STRONG[n].join(', ') || 'nothing in particular'}`)}</div>
           <div class="pick">${pick('shape', Object.keys(SHAPES), draft.shape, (n) => SHAPES[n].hint)}</div>
           <div class="statline"><b>${CM.maxHp(preview)} HP</b> · ATK ${st.atk} · DEF ${st.def} · SPD ${st.spd}<br>${SHAPES[draft.shape].hint}. Same-element moves hit 25% harder.</div>
-          <button class="plain primary" data-a="save" ${draft.moves.length ? '' : 'disabled'}>${idx == null ? 'Create!' : 'Save changes'}</button>
+          <button class="plain primary" data-a="save" ${draft.moves.length && (idx != null || S.items.creataball) ? '' : 'disabled'}>${idx == null ? 'Create! (uses a Creataball)' : 'Save changes'}</button>
           ${draft.moves.length ? '' : '<small class="empty">Needs at least one move card.</small>'}
+          ${idx == null && !S.items.creataball ? '<small class="empty">You have no Creataballs. Look for sparkles, win badges, or battle wild Creatamon.</small>' : ''}
         </div>
         <div class="right">
           <h3>Moves (${draft.moves.length})</h3>
@@ -1084,10 +1283,12 @@
     cv.onpointerdown = (e) => {
       if (!drawingNow()) return;
       cv.setPointerCapture(e.pointerId);
+      if (forge.tool !== 'pick') snapshot();
       stroke(e);
-      if (forge.tool !== 'fill') cv.onpointermove = stroke;
+      if (forge.tool === 'pen' || forge.tool === 'erase') cv.onpointermove = stroke;
     };
-    cv.onpointerup = cv.onpointercancel = () => { cv.onpointermove = null; };
+    if ($('fcolor')) $('fcolor').oninput = (e) => { forge.color = e.target.value; if (forge.tool === 'erase' || forge.tool === 'pick') forge.tool = 'pen'; };
+    cv.onpointerup = cv.onpointercancel = () => { if (cv.onpointermove) { cv.onpointermove = null; renderForge(); } };
     const file = $('fart');
     if (file) file.onchange = () => { if (file.files[0]) loadUpload(file.files[0]); };
     $('fname').oninput = (e) => {
@@ -1110,6 +1311,7 @@
     const drawn = forge.look === 'draw' && pix.getContext('2d').getImageData(0, 0, GRID, GRID).data.some((v, i) => i % 4 === 3 && v);
     const art = artUp ? forge.upload : drawn ? pix.toDataURL() : null;
     if (idx == null) {
+      S.items.creataball--;
       S.party.push(Object.assign(CM.create({ ...draft, name, art }), { artUp }));
     } else {
       const c = S.party[idx];
@@ -1125,9 +1327,10 @@
   }
 
   $menu.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool],[data-w]');
+    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool],[data-w],[data-size],[data-spray]');
     if (!b || b.disabled) return;
     const d = b.dataset;
+    if (help) { help = false; return renderMenu(); }
     if (wardrobe) {
       const { draft } = wardrobe;
       if (d.a === 'cancel') wardrobe = null;
@@ -1142,7 +1345,11 @@
       const { draft, avail } = forge;
       if (d.a === 'cancel') forge = null;
       else if (d.a === 'save') return saveForge();
-      else if (d.a === 'clearart') forge.pix.getContext('2d').clearRect(0, 0, GRID, GRID);
+      else if (d.a === 'clearart') { snapshot(); forge.pix.getContext('2d').clearRect(0, 0, GRID, GRID); }
+      else if (d.a === 'undo') forge.pix.getContext('2d').putImageData(forge.undo.pop(), 0, 0);
+      else if (d.a === 'stamp') { snapshot(); stampAuto(); }
+      else if (d.a === 'mirror') forge.mirror = !forge.mirror;
+      else if (d.size) forge.size = +d.size;
       else if (d.look) forge.look = d.look;
       else if (d.color) { forge.color = d.color; if (forge.tool === 'erase') forge.tool = 'pen'; }
       else if (d.tool) forge.tool = d.tool;
@@ -1162,6 +1369,13 @@
     }
     if (d.a === 'close') return closeMenu();
     if (d.a === 'wardrobe') return openWardrobe(false);
+    if (d.a === 'howto') { help = true; return renderMenu(); }
+    if (d.spray) S.spray = d.spray;
+    if (d.a === 'evolve') {
+      const c = S.party[+d.i], was = CM.maxHp(c);
+      CM.evolve(c);
+      alert(`${c.name} evolved into its ${CM.STAGE_NAMES[c.stage].toLowerCase()}!\n\n+${CM.maxHp(c) - was} max HP, and its attacks now deal ${Math.round((CM.STAGE_DMG[c.stage] - 1) * 100)}% extra damage.`);
+    }
     if (d.a === 'new') return openForge(null);
     if (d.a === 'edit') return openForge(+d.i);
     if (d.a === 'lead') S.party.unshift(S.party.splice(+d.i, 1)[0]);
@@ -1182,11 +1396,14 @@
     girl: { label: 'Girl', title: 'young lady', look: { hairStyle: 'long', top: 'tee', bottom: 'skirt' } },
     other: { label: 'Non-binary', title: 'young creator', look: { hairStyle: 'bob', top: 'hoodie', bottom: 'shorts' } },
   };
-  const HAIR_STYLES = { short: 'Short', spiky: 'Spiky', bob: 'Bob', long: 'Long' };
-  const SKIN_TONES = ['#fbe0c8', '#f3c9a0', '#d9a066', '#a86b3c', '#6e4424'];
-  const HAIR_COLORS = ['#1c1c28', '#3a2412', '#8a5a2b', '#d8a03a', '#f3e2a0', '#c0452c', '#9a9a9a', '#f08aa0', '#55a8ee', '#72cc5c'];
-  const CLOTH_COLORS = ['#e0483c', '#f47a45', '#f6d643', '#72cc5c', '#2f7a2c', '#55a8ee', '#1f5f9e', '#9b3fd6', '#f08aa0',
-    '#f4f4f4', '#9a9a9a', '#8a5a2b', '#2c2c3c'];
+  const HAIR_STYLES = { short: 'Short', spiky: 'Spiky', bob: 'Bob', long: 'Long', ponytail: 'Ponytail', pigtails: 'Pigtails', bun: 'Bun',
+    curly: 'Curly', afro: 'Afro', mohawk: 'Mohawk', bald: 'Bald' };
+  const SKIN_TONES = ['#fbe0c8', '#f3c9a0', '#e8b384', '#d9a066', '#b97d48', '#a86b3c', '#6e4424', '#4a2c16'];
+  const HAIR_COLORS = ['#1c1c28', '#3a2412', '#5c3a1e', '#8a5a2b', '#b8823c', '#d8a03a', '#f3e2a0', '#f4f4f4', '#9a9a9a', '#c0452c',
+    '#e0483c', '#f47a45', '#f08aa0', '#f29ad0', '#9b3fd6', '#5b3fa8', '#55a8ee', '#1f5f9e', '#39c7b3', '#72cc5c'];
+  const CLOTH_COLORS = ['#e0483c', '#8c231b', '#f47a45', '#f5b942', '#f6d643', '#fff3a8', '#72cc5c', '#2f7a2c', '#39c7b3', '#b4e6c6',
+    '#55a8ee', '#1f5f9e', '#bfe3fb', '#9b3fd6', '#5b3fa8', '#f29ad0', '#f08aa0', '#f4f4f4', '#d8d8d8', '#9a9a9a', '#566070',
+    '#e3c98a', '#8a5a2b', '#3a2412', '#2c2c3c'];
   const NEW_LOOK = {
     name: '', gender: null, skin: SKIN_TONES[1], hair: HAIR_COLORS[1], hairStyle: 'short',
     hat: 'none', hatColor: '#e0483c', top: 'tee', topColor: '#e0483c', bottom: 'pants', bottomColor: '#1f5f9e',
@@ -1206,8 +1423,10 @@
     const { draft, isNew } = wardrobe;
     const btn = (field, v, text, attrs = '') =>
       `<button class="plain ${draft[field] === v ? 'on' : ''}" data-w="${field}" data-v="${v}" ${attrs}>${text}</button>`;
+    // A row of ready-made colours, then a picker for any colour at all.
     const swatches = (field, colors) => `<div class="swatches">${colors.map((c) =>
-      `<button data-w="${field}" data-v="${c}" class="${draft[field] === c ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div>`;
+      `<button data-w="${field}" data-v="${c}" class="${draft[field] === c ? 'on' : ''}" style="background:${c}"></button>`).join('')}
+      <input type="color" data-wc="${field}" value="${draft[field]}" title="Any colour"></div>`;
     const slot = (name) => {
       const items = Object.keys(CLOTHES).filter((id) => CLOTHES[id].slot === name).map((id) => {
         const locked = CLOTHES[id].locked && !S.wardrobe[id];
@@ -1223,7 +1442,7 @@
           <input id="pname" maxlength="12" placeholder="Your name..." value="${esc(draft.name)}">
           <button class="plain primary" data-a="save" ${draft.gender ? '' : 'disabled'}>${isNew ? 'Start adventure!' : 'Save look'}</button>
           ${draft.gender ? '' : '<small class="empty">Choose a gender to begin.</small>'}
-          <small class="empty">More clothes are hidden in chests and won from trainers.</small>
+          <small class="empty">More clothes are hidden among the sparkles and won from trainers.</small>
         </div>
         <div class="right">
           <h3>Gender</h3>
@@ -1239,6 +1458,7 @@
       </div>`;
     paintPerson();
     $('pname').oninput = (e) => { draft.name = e.target.value; };
+    $menu.querySelectorAll('[data-wc]').forEach((el) => { el.oninput = () => { draft[el.dataset.wc] = el.value; paintPerson(); }; });
   }
   function saveWardrobe() {
     const { draft, isNew } = wardrobe;
@@ -1276,19 +1496,18 @@
     }
   }
   const spriteFor = (x, y, time) => {
-    const k = `${x},${y}`, chest = chestAt(x, y), npc = npcAt(x, y);
+    const k = `${x},${y}`, found = pickupAt(x, y), npc = npcAt(x, y);
     if (P.blocks[k]) return (g, sx, sy) => drawProp(g, P.blocks[k], sx, sy, time);
-    if (chest) return (g, sx, sy) => drawProp(g, 'chest', sx, sy, time, { opened: S.chests[`${S.map}:${k}`], outfit: chest.outfit });
-    if (!npc) return null;
+    if (!npc) return found ? (g, sx, sy) => drawProp(g, 'sparkle', sx, sy, time, found) : null;
     return npc.kind ? (g, sx, sy) => drawProp(g, npc.kind, sx, sy, time, { taken: S.f.blade })
       : (g, sx, sy) => drawPerson(g, sx, sy, npc.drawn, 'down');
   };
 
   function draw(time) {
     const m = MAPS[S.map], w = m.rows[0].length, h = m.rows.length;
-    const tx = move ? move.fx + (move.tx - move.fx) * move.t : S.x, ty = move ? move.fy + (move.ty - move.fy) * move.t : S.y;
+    const [tx, ty] = where();
     // Alternate feet from one step to the next.
-    const frame = move && move.n === 1 && move.t > 0.15 && move.t < 0.85 ? ((move.fx + move.fy) & 1) + 1 : 0;
+    const frame = move && move.n === 1 && move.t > 0.15 && move.t < 0.85 ? ((move.pts[0][0] + move.pts[0][1]) & 1) + 1 : 0;
     const me = (g, sx, sy) => drawPerson(g, sx, sy, S.player || NEW_LOOK, S.dir, frame, S.surf);
 
     if (gl3d) {
@@ -1344,9 +1563,11 @@
     if (mode === 'world') {
       if (k === 'm' || k === 'escape') return openMenu();
       if (k === 'r') return resetPuzzle();
+      if (k === 'g') return spray();
       if (confirmKey && !e.repeat) return interact();
     } else if (mode === 'menu' && k === 'escape') {
-      if (wardrobe) { if (wardrobe.isNew) return; wardrobe = null; renderMenu(); }
+      if (help) { help = false; renderMenu(); }
+      else if (wardrobe) { if (wardrobe.isNew) return; wardrobe = null; renderMenu(); }
       else if (forge) { forge = null; renderMenu(); } else closeMenu();
       return;
     }
