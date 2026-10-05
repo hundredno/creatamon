@@ -322,3 +322,8 @@ button { color: inherit; }
 #title button { border: 0; border-radius: 999px; box-shadow: 0 5px 0 #0004; }
 .info.me { bottom: 232px; }
 #place { top: 118px; }
+
+/* ---- Alphas and rank ---- */
+.sprite.alpha { width: 230px; height: 230px; filter: drop-shadow(0 0 8px #e8384f) drop-shadow(0 0 20px #ff5a3c); }
+#foeSprite.alpha { right: 45px; top: -6px; }
+#menu h2 .rank { font-size: 14px; font-weight: 800; padding: 2px 12px; border-radius: 999px; background: #ffd24a; color: #1d2437; vertical-align: middle; }

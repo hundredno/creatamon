@@ -435,6 +435,15 @@ const CM = (() => {
     east3: [['Sludgel', 4], ['Venomite', 4], ['Gloomoth', 4], ['Toxitoad', 2], ['Dewsnake', 2], ['Miasmander', 1]],
     7: [['Snowpuff', 4], ['Frostfinch', 4], ['Glimmershell', 4], ['Crystalisk', 2], ['Frostmaw', 2], ['Stormkite', 2], ['Oraclynx', 1], ['Glacierback', 1]],
   };
+  // ---- Alpha rank ----
+  // Beating alpha Creatamon earns rank. Each title needs this many alpha wins; Champion comes only from beating the Champion.
+  const ALPHA_TITLES = ['Alpha I', 'Alpha II', 'Alpha III', 'King I', 'King II', 'King III', 'Emperor I', 'Emperor II', 'Emperor III',
+    'Conqueror I', 'Conqueror II', 'Conqueror III'];
+  const ALPHA_NEED = [1, 2, 3, 4, 6, 8, 10, 12, 15, 18, 21, 24];
+  const alphaRank = (wins) => ALPHA_NEED.filter((n) => (wins || 0) >= n).length;
+  const title = (wins, champion) => (champion ? 'Champion' : ALPHA_TITLES[alphaRank(wins) - 1] || '');
+  // The rank the Champion demands of a challenger (an index into ALPHA_TITLES, plus one).
+  const CUP_RANK = 7;
   // ---- Money ----
   // Beating a trainer pays out by their strongest Creatamon; Leaders pay triple.
   const prize = (team, big) => Math.max(...team.map((t) => t[1])) * 14 * (big ? 3 : 1);
@@ -487,7 +496,7 @@ const CM = (() => {
     ELEMENTS, STRONG, SHAPES, CARDS, TIER_NAMES, EGG, MAX_PARTY, CLOTHES, SPECIES, DEX, WILD, ZONE_OF,
     STARTER_CARDS, ENCOUNTER_RATE,
     isEgg, setMax, battleMoves, DOMAIN_STRIKE, ITEMS, held, EVOLVE_AT, STAGE_NAMES, STAGE_DMG, STAGE_HP, canEvolve, evolve,
-    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp, levelCap, MOVE_SLOTS, prize, cardPrice, cardNeed, CLOTHES_PRICE,
+    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp, levelCap, MOVE_SLOTS, ALPHA_TITLES, ALPHA_NEED, alphaRank, title, CUP_RANK, prize, cardPrice, cardNeed, CLOTHES_PRICE,
     useMove, pickMove, spawn, genWild, rollDrop,
   };
 })();

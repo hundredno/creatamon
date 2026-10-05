@@ -32,7 +32,7 @@
     cards: {}, party: [], chests: {}, beaten: {}, f: {}, badges: {}, smashed: {}, solved: {}, quiz: 0,
     player: null, wardrobe: {}, seen: {},
     items: {}, sprays: {}, sprayOwned: { star: true, smile: true }, spray: 'star', tips: {},
-    money: 0, storage: [], explored: '',
+    money: 0, storage: [], explored: '', alphaWins: 0, dev: null,
   });
   // packSeen: the explored map, defined with the minimap below.
   const save = () => { try { S.explored = packSeen(); localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } };
@@ -133,6 +133,167 @@
   const pickupAt = (x, y) => { const c = chestAt(x, y); return c && !S.chests[`${S.map}:${x},${y}`] ? c : null; };
   const blocked = (x, y) => !!npcAt(x, y);
   const hasFighter = () => S.party.some((c) => c.hp > 0);
+  // ---------- Alphas ----------
+  // Big, strong wild Creatamon that prowl the open ground beside long grass. They wander until they spot the player,
+  // then give chase; if one catches up, it is a battle. They are not saved: fresh ones turn up as the player travels.
+  const alphas = [];
+  const ALPHA_MAX = 3, ALPHA_SIGHT = 6, ALPHA_WALK = 430, ALPHA_RUN = 165;
+  let alphaSpawn = 0;
+  const isGrass = (x, y) => { const ch = CM.charAt('world', x, y); return ch !== '~' && !!CM.ZONE_OF[ch]; };
+  const grassNear = (x, y, r) => { for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (isGrass(x + i, y + j)) return [x + i, y + j]; return null; };
+  // Open ground an alpha may stand on: out on a route, not in the grass itself, with nobody and nothing in the way.
+  const alphaSpot = (x, y, chasing) => {
+    const ch = CM.charAt('world', x, y);
+    if (!('.=sS_'.includes(ch) || (chasing && isGrass(x, y)))) return false;
+    return !!CM.areaAt('world', x, y).lv && !npcAt(x, y) && !pickupAt(x, y) && !alphas.some((a) => a.x === x && a.y === y);
+  };
+  function spawnAlpha(x, y) {
+    const area = CM.areaAt('world', x, y), near = grassNear(x, y, 2);
+    const list = CM.WILD[area.wild || CM.ZONE_OF[CM.charAt('world', ...near)]];
+    const species = list[Math.floor(Math.random() * list.length)][0];
+    const c = CM.spawn(species, Math.min(area.lv[1] + 4, CM.levelCap(badgeCount()) + 2));
+    c.hpCards.push('hp250');
+    Object.assign(c, { species, name: `Alpha ${species}`.slice(0, 18), alpha: true, hp: 0 });
+    c.hp = CM.maxHp(c);
+    alphas.push({ c, x, y, px: x, py: y, t: 1, dur: ALPHA_WALK, wait: 400 + Math.random() * 800, rest: 0, chase: false, cv: null });
+  }
+  function updateAlphas(dt) {
+    if (S.map !== 'world' || !S.f.ceremony || !hasFighter() || (S.dev && S.dev.noWild)) { alphas.length = 0; return; }
+    // Fresh ones appear a little way off, on open ground next to long grass; ones left far behind are forgotten.
+    if ((alphaSpawn -= dt) <= 0) {
+      alphaSpawn = 1400;
+      for (let i = alphas.length - 1; i >= 0; i--) if (Math.abs(alphas[i].x - S.x) + Math.abs(alphas[i].y - S.y) > 30) alphas.splice(i, 1);
+      for (let tries = 0; tries < 24 && alphas.length < ALPHA_MAX; tries++) {
+        const x = S.x + Math.floor(Math.random() * 31) - 15, y = S.y + Math.floor(Math.random() * 23) - 11;
+        if (Math.abs(x - S.x) + Math.abs(y - S.y) >= 8 && alphaSpot(x, y) && grassNear(x, y, 2)) { spawnAlpha(x, y); break; }
+      }
+    }
+    for (const a of alphas) {
+      a.t = Math.min(1, a.t + dt / a.dur);
+      a.rest -= dt;
+      if (a.t < 1) continue;
+      // Caught: it is standing where the player is.
+      if (!move && a.rest <= 0 && a.x === S.x && a.y === S.y) return void fightAlpha(a);
+      if ((a.wait -= dt) > 0) continue;
+      const dx = S.x - a.x, dy = S.y - a.y;
+      a.chase = a.rest <= 0 && Math.abs(dx) + Math.abs(dy) <= ALPHA_SIGHT;
+      let step = null;
+      if (a.chase) {
+        // Close the larger gap first; if that way is shut, try the other.
+        const ways = Math.abs(dx) >= Math.abs(dy) ? [[Math.sign(dx), 0], [0, Math.sign(dy)]] : [[0, Math.sign(dy)], [Math.sign(dx), 0]];
+        step = ways.find(([i, j]) => (i || j) && ((a.x + i === S.x && a.y + j === S.y) || alphaSpot(a.x + i, a.y + j, true)));
+      } else {
+        const [i, j] = Object.values(DIRS)[Math.floor(Math.random() * 4)];
+        if (alphaSpot(a.x + i, a.y + j) && grassNear(a.x + i, a.y + j, 3)) step = [i, j];
+      }
+      a.dur = a.chase ? ALPHA_RUN : ALPHA_WALK;
+      a.wait = a.chase ? 0 : 300 + Math.random() * 900;
+      if (step) Object.assign(a, { px: a.x, py: a.y, x: a.x + step[0], y: a.y + step[1], t: 0 });
+    }
+  }
+  function fightAlpha(a) {
+    run(async () => {
+      await say(`The ${a.c.name} caught you! It roars and attacks!`);
+      await tip('alpha', ['Alphas are far stronger than ordinary wild Creatamon: higher level, with much more health.',
+        'You can Run, and it will lose interest for a moment. Beat it and you earn Alpha rank, coins and a sure Power Card.']);
+      const result = await battle([a.c], { zone: bgZone(), alpha: true });
+      $battle.hidden = true;
+      if (result === 'lose') { alphas.length = 0; return whiteout(); }
+      if (result !== 'win') { Object.assign(a, { rest: 6000, chase: false }); return; }
+      alphas.splice(alphas.indexOf(a), 1);
+      const before = CM.title(S.alphaWins), coins = a.c.level * 25;
+      S.alphaWins = (S.alphaWins || 0) + 1;
+      S.money += coins;
+      await say(`You defeated an alpha! That is ${S.alphaWins} so far. You found ${COIN}${coins} where it fell.`);
+      await giveCards([CM.rollDrop(CM.areaAt('world', S.x, S.y).drops || [40, 45, 15], Math.random, true)]);
+      const now = CM.title(S.alphaWins);
+      if (now !== before) await sayAll([`Your Alpha rank rose to ${now}!`, 'Stand still for a few seconds and your title shows above your head.']);
+      else { const next = CM.ALPHA_NEED[CM.alphaRank(S.alphaWins)]; if (next) await say(`${next - S.alphaWins} more alpha win${next - S.alphaWins === 1 ? '' : 's'} to reach ${CM.ALPHA_TITLES[CM.alphaRank(S.alphaWins)]}.`); }
+    });
+  }
+  // An alpha out in the world: its own portrait, larger than a person, in a pulsing red glow.
+  // k: scale, for views that cannot enlarge the sprite themselves.
+  function drawAlpha(g, a, sx, sy, time, k = 1) {
+    if (!a.cv) { a.cv = document.createElement('canvas'); a.cv.width = a.cv.height = 120; drawCreature(a.cv, a.c, false); }
+    const pulse = 0.5 + 0.5 * Math.sin(time / 240), bob = a.t < 1 ? Math.abs(Math.sin(a.t * Math.PI)) * 2 : 0;
+    const cx = sx + 16, foot = sy + 31, w = 32 * k;
+    const glow = g.createRadialGradient(cx, foot - w * 0.45, w * 0.12, cx, foot - w * 0.45, w * 0.5);
+    glow.addColorStop(0, `rgba(255,70,60,${0.55 + 0.25 * pulse})`); glow.addColorStop(1, 'rgba(255,70,60,0)');
+    g.fillStyle = glow; g.fillRect(cx - w / 2, foot - w * 0.95, w, w);
+    g.drawImage(a.cv, cx - w / 2, foot - w - bob * k, w, w);
+  }
+
+  // ---------- Developer mode ----------
+  // Opened by typing the secret word in the menu. Shortcuts for testing: nothing here is part of normal play.
+  const TOWNS = [];
+  MAPS.world.rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === 'H') TOWNS.push([CM.areaAt('world', x, y).name, x, y]); }));
+  function renderDev() {
+    const dv = S.dev, b = (act, text, v = '') => `<button class="plain" data-dev="${act}" data-v="${v}">${text}</button>`;
+    const sw = (key, text) => `<button class="plain ${dv[key] ? 'on' : ''}" data-dev="toggle" data-v="${key}">${text}: ${dv[key] ? 'ON' : 'off'}</button>`;
+    $menu.className = '';
+    $menu.innerHTML = `${head('Developer mode')}
+      <p class="empty">Testing tools. At ${S.map} ${S.x},${S.y} · ${badgeCount()} badges · ${S.alphaWins || 0} alpha wins · next: ${esc(objective())}</p>
+      <h3>Switches</h3><div class="pick">${sw('noWild', 'No wild battles or alphas')}${sw('noclip', 'Walk through walls')}${sw('ohko', 'One-hit wins')}</div>
+      <h3>Story</h3><div class="pick">${b('skip', 'Complete the current objective')}${b('skipall', 'Skip to the Champion match')}${b('alphawin', '+1 alpha win')}${b('alpha', 'Spawn an alpha nearby')}</div>
+      <h3>Give</h3><div class="pick">${b('heal', 'Heal party')}${b('coins', `+${COIN}5000`)}${b('balls', '+10 Creataballs')}${b('potions', '+10 of each potion')}${b('cards', 'One of every card')}${b('health', '+10 Titan Hearts')}${b('clothes', 'All clothes')}${b('level', 'Lead to the level limit')}${b('map', 'Reveal the map')}</div>
+      <h3>Teleport</h3><div class="pick">${TOWNS.map(([name, x, y]) => b('tp', name, `${x},${y}`)).join('')}</div>`;
+  }
+  function devSkip() {
+    const f = S.f, b = S.badges;
+    const badge = (el, also = []) => [!b[el], () => { b[el] = true; S.solved[`gym_${el}`] = true; also.forEach(flag); }];
+    const steps = [
+      [!f.rival1, () => flag('rival1')], [!f.grove, () => flag('grove')], [!f.endorsed, () => { flag('endorsed'); flag('bike'); }],
+      [!f.ceremony, () => { flag('ceremony'); addCard('rock_smash'); }],
+      badge('Grass', ['cyril1']), badge('Water'), badge('Fire', ['nettie1']), badge('Wind'), badge('Rock'), [!f.mural, () => flag('mural')],
+      badge('Electric'), badge('Metal'), [!f.rival3, () => flag('rival3')], badge('Ice'), [!f.surf, () => { flag('surf'); flag('hydro'); addCard('surf'); }],
+      badge('Shadow', ['holler', 'nettie2']), badge('Mind'), badge('Robot'), badge('Light'), badge('Toxic'), [!b.Normal, () => { S.quiz = 5; badge('Normal')[1](); }],
+      [!f.semis, () => { flag('semi1'); flag('semis'); }], [!f.opaline, () => flag('opaline')], [!f.night, () => { f.finals = 4; flag('night'); }],
+      [!f.blade, () => { flag('blade'); flag('shortcut'); }], [!f.dawn, () => { flag('sterling'); flag('dawn'); }],
+      [CM.alphaRank(S.alphaWins) < CM.CUP_RANK, () => { S.alphaWins = CM.ALPHA_NEED[CM.CUP_RANK - 1]; }], [!f.champion, () => flag('champion')],
+    ];
+    const next = steps.find((st) => st[0]);
+    if (next) next[1]();
+    return !!next;
+  }
+  function devDo(act, v) {
+    if (act === 'toggle') S.dev[v] = !S.dev[v];
+    else if (act === 'skip') devSkip();
+    else if (act === 'skipall') { for (let i = 0; i < 60 && !S.f.dawn; i++) devSkip(); devSkip(); }
+    else if (act === 'alphawin') S.alphaWins = (S.alphaWins || 0) + 1;
+    else if (act === 'heal') healAll();
+    else if (act === 'coins') S.money += 5000;
+    else if (act === 'balls') addItem('creataball', 10);
+    else if (act === 'potions') ['potion', 'super_potion', 'max_potion', 'revive'].forEach((id) => addItem(id, 10));
+    else if (act === 'cards') Object.keys(CARDS).filter((id) => CARDS[id].tier < 4).forEach((id) => addCard(id));
+    else if (act === 'health') addCard('hp250', 10);
+    else if (act === 'clothes') Object.keys(CLOTHES).forEach((id) => { S.wardrobe[id] = true; });
+    else if (act === 'level' && S.party[0]) { CM.gainXp(S.party[0], 1e7, CM.levelCap(badgeCount())); S.party[0].hp = CM.maxHp(S.party[0]); }
+    else if (act === 'map') { loadSeen('o'.repeat(Math.ceil(MW * MH / 6))); }
+    else if (act === 'tp' || act === 'alpha') {
+      if (act === 'tp') { const [x, y] = v.split(',').map(Number); goTo('world', x, y, 'down'); }
+      else {
+        if (S.map !== 'world') return alert('Alphas only live outdoors.');
+        flag('ceremony');
+        for (let r = 2; r < 7; r++) for (const [i, j] of [[r, 0], [-r, 0], [0, r], [0, -r]]) if (alphas.length < 6 && alphaSpot(S.x + i, S.y + j, true) && !alphas.some((a) => a.fresh)) { alphaSpawnAt(S.x + i, S.y + j); }
+      }
+      alphas.forEach((a) => { delete a.fresh; });
+      closeMenu();
+      return updateHud();
+    }
+    save();
+    updateHud();
+    renderMenu();
+  }
+  // Developer spawn: an alpha on any open tile, grass nearby or not.
+  function alphaSpawnAt(x, y) {
+    const area = CM.areaAt('world', x, y), species = CM.WILD[area.wild || 1][0][0];
+    const c = CM.spawn(species, Math.min((area.lv || [5, 5])[1] + 4, CM.levelCap(badgeCount()) + 2));
+    c.hpCards.push('hp250');
+    Object.assign(c, { species, name: `Alpha ${species}`.slice(0, 18), alpha: true });
+    c.hp = CM.maxHp(c);
+    alphas.push({ c, x, y, px: x, py: y, t: 1, dur: ALPHA_WALK, wait: 1500, rest: 0, chase: false, cv: null, fresh: true });
+  }
+
   // ---------- Minimap ----------
   // The world is drawn one pixel per tile, and only the parts the player has walked near are filled in.
   const MW = MAPS.world.rows[0].length, MH = MAPS.world.rows.length, SIGHT = 7;
@@ -188,6 +349,7 @@
       const [gx, gy] = map === 'world' ? [qx, qy] : door.split(':')[1].split(',').map(Number);
       dot(gx, gy, span === MW ? k * 2.6 : 6, '#ffd24a', '#e8384f');
     }
+    if (span !== MW) alphas.forEach((a) => dot(a.x, a.y, 3.2, '#e8384f', '#fff'));
     dot(px, py, span === MW ? k * 1.8 : 4.5, '#ffffff', '#1d2437');
   }
 
@@ -216,9 +378,13 @@
     updateHud();
   }
 
+  let idleSince = 0;     // when the player last moved or was busy; the title shows after standing still a while
   function update(dt) {
+    if (mode !== 'world') { idleSince = performance.now(); return; }
+    updateAlphas(dt);
     if (mode !== 'world') return;
     if (move) {
+      idleSince = performance.now();
       move.t += dt / ((S.bike ? BIKE_STEP : WALK_STEP) * move.n);
       if (move.t >= 1) { [S.x, S.y] = move.pts[move.pts.length - 1]; move = null; onStep(); }
       return;
@@ -232,7 +398,11 @@
     // A bike with floats rides straight out onto water.
     const afloat = S.bike && S.f.hydro && !S.surf && CM.charAt(S.map, S.x + DIRS[dir][0], S.y + DIRS[dir][1]) === '~';
     if (afloat) S.surf = true;
-    const res = CM.step(S.map, P, S, S.x, S.y, dir, blocked);
+    let res = CM.step(S.map, P, S, S.x, S.y, dir, blocked);
+    // Developer mode: walk through anything.
+    if (!res && S.dev && S.dev.noclip && MAPS[S.map].rows[S.y + DIRS[dir][1]] && MAPS[S.map].rows[S.y + DIRS[dir][1]][S.x + DIRS[dir][0]]) {
+      res = { path: [[S.x + DIRS[dir][0], S.y + DIRS[dir][1]]], n: 1 };
+    }
     if (res) move = { pts: [[S.x, S.y], ...res.path], t: 0, n: res.n };
     else if (afloat) S.surf = false;
   }
@@ -300,7 +470,7 @@
       await talk('Clunk! The gate to the Leader swings open.');
     }
     const habitat = CM.ZONE_OF[ch], area = CM.areaAt(S.map, S.x, S.y);
-    if (habitat && area.lv && hasFighter() && grace-- <= 0 && Math.random() < CM.ENCOUNTER_RATE) {
+    if (habitat && area.lv && hasFighter() && !(S.dev && S.dev.noWild) && grace-- <= 0 && Math.random() < CM.ENCOUNTER_RATE) {
       grace = 3;
       await run(async () => {
         await tip('wild', ['Something rustles! Tall grass, flowers, forest floor and cave rubble hide wild Creatamon. Walking through them can start a battle at any step.',
@@ -461,6 +631,7 @@
       [!f.night, 'Win the Champion Cup finals at the Summit City stadium.', ...at('registrar')],
       [!f.blade, 'Leave Summit City by the west gate and hurry to the altar deep in the Drowsing Grove.', ...at('altar')],
       [!f.dawn, 'Stop Chairman Sterling at the Energy Plant in Anvilgate.', ...at(f.sterling ? 'eternox' : 'sterling')],
+      [CM.alphaRank(S.alphaWins) < CM.CUP_RANK, `The Champion only faces challengers ranked ${CM.ALPHA_TITLES[CM.CUP_RANK - 1]} or higher. Defeat alpha Creatamon, the big red ones that roam near long grass (${S.alphaWins || 0}/${CM.ALPHA_NEED[CM.CUP_RANK - 1]}).`],
       [!f.champion, 'Champion Vex is waiting for you at the Summit City stadium.', ...at('registrar')],
     ];
     const next = steps.find((st) => st[0]);
@@ -758,11 +929,16 @@
         return flag('night');
       }
       if (!f.dawn) return say('Cup Registrar: The final is suspended! Your friend Finn ran for the west gate, shouting about the Drowsing Grove.');
+      if (CM.alphaRank(S.alphaWins) < CM.CUP_RANK) {
+        return sayAll([`Cup Registrar: The Champion only accepts challengers who hold the rank of ${CM.ALPHA_TITLES[CM.CUP_RANK - 1]} or higher.`,
+          `Cup Registrar: You are ${CM.title(S.alphaWins) || 'unranked'}. Rank is earned by defeating alpha Creatamon, the huge ones that prowl near long grass. You have beaten ${S.alphaWins || 0} of the ${CM.ALPHA_NEED[CM.CUP_RANK - 1]} you need.`]);
+      }
       await sayAll(['Three days later, the stadium is full to the rafters.',
         'Champion Vex: You saved Galdra. But that is not why they are here. They came to see whether anyone can beat me. Let us give them a Champion-time match!']);
       if (!await duel('Champion Vex', TEAMS.vex, CUP)) return;
       flag('champion');
-      await sayAll(['Champion Vex: ...My unbeaten run ends here. I could not be prouder to lose.', `${you()} is the new Champion of Galdra!`]);
+      await sayAll(['Champion Vex: ...My unbeaten run ends here. I could not be prouder to lose.', `${you()} is the new Champion of Galdra!`,
+        'Your title is now: Champion! Stand still for a moment and it shows above your head.']);
       await giveCards(['inferno_crash', 'hyper_burst', 'hp250']);
       await giveClothes(['crown', 'champion_cape']);
       await say('Thank you for playing Creatamon! The world stays open: keep forging, collecting and exploring.');
@@ -832,6 +1008,7 @@
     ['Heal', 'Step on a pink heal pad to restore your whole party. If everyone faints you return to the last pad you used.'],
     ['Gyms', 'Each town\'s gym has a puzzle before its Leader. Press R to start a puzzle over. In gyms you can use Max Mode once per battle.'],
     ['Bike', 'Once the Champion gives you a bike, press Q outdoors to hop on or off. It is twice as fast as walking. Later it gets floats: then just ride onto water to cross it.'],
+    ['Alphas', 'Huge red-glowing alpha Creatamon prowl near long grass. If one spots you it charges; if it touches you, you battle. They are tough, but beating them raises your Alpha rank (Alpha I up to Conqueror III), which the Champion demands. Stand still to show your title.'],
     ['Field moves', 'Rock Smash breaks cracked rocks and Surf crosses water: slot the card on a Creatamon (a rebuild, so keep a Creataball spare), face the obstacle and press Enter.'],
     ['Spray paint', 'Press G to spray your chosen design on the ground in front of you.'],
   ];
@@ -872,6 +1049,7 @@
     $('meName').textContent = shownName(me);
     $('meLv').textContent = `Lv ${me.level} · ${me.element}${me.max ? ' · MAX' : ''}`;
     $('foeSprite').classList.toggle('max', !!foe.max);
+    $('foeSprite').classList.toggle('alpha', !!foe.alpha && !foe.max);
     $('meSprite').classList.toggle('max', !!me.max);
     drawCreature($('foeSprite'), foe, false);
     drawCreature($('meSprite'), me, true);
@@ -908,6 +1086,7 @@
     const att = B[who], def = B[other];
     await say(`${shownName(att)} used ${m.name}!`);
     const r = CM.useMove(att, def, m);
+    if (who === 'me' && S.dev && S.dev.ohko && r.dmg) def.hp = 0;
     if (r.miss) return say('But it missed!');
     if (r.domain) {
       B.domain = { owner: att, turns: r.domain };
@@ -1107,7 +1286,7 @@
         endMax(B.foe);
         // Everyone still standing who attacked this foe earns the XP, starting with whoever is out now.
         const earners = S.party.filter((c) => c.hp > 0 && B.hit.has(c)).sort((a, b) => (b === B.me) - (a === B.me));
-        for (const c of earners.length ? earners : [B.me]) await grantXp(c, B.foe, !!opts.trainer);
+        for (const c of earners.length ? earners : [B.me]) await grantXp(c, B.foe, !!opts.trainer || !!opts.alpha);
         B.hit.clear();
         const next = foes.find((f) => f.hp > 0);
         if (!next) return 'win';
@@ -1242,14 +1421,14 @@
     if (help) return renderHelp();
     if (wardrobe) return renderWardrobe();
     if (forge) return renderForge();
-    ({ party: renderParty, storage: renderStorage, dex: renderDex, map: renderMapPage, sprays: renderSprays, shop: renderShop }[page] || renderHome)();
+    ({ party: renderParty, storage: renderStorage, dex: renderDex, map: renderMapPage, sprays: renderSprays, shop: renderShop, dev: renderDev }[page] || renderHome)();
   }
   // The front page: a grid of big tiles, one for each thing the menu can do.
   function renderHome() {
     const tile = (attr, icon, label, color, note = '') => `<button class="tile" ${attr} style="--c:${color}"><i>${icon}</i><b>${label}</b><small>${note}</small></button>`;
     $menu.className = 'home';
     $menu.innerHTML = `
-      <header><h2>${esc(S.player.name)}</h2><span class="purse">${COIN}${S.money} &nbsp;·&nbsp; ${badgeCount()}/${TOTAL} badges</span></header>
+      <header><h2>${esc(S.player.name)}${CM.title(S.alphaWins, S.f.champion) ? ` <small class="rank">★ ${CM.title(S.alphaWins, S.f.champion)}</small>` : ''}</h2><span class="purse">${COIN}${S.money} &nbsp;·&nbsp; ${badgeCount()}/${TOTAL} badges</span></header>
       <p class="goal"><b>Next:</b> ${esc(objective())}</p>
       <div class="tiles">
         ${tile('data-page="party"', '🐾', 'Creatamon', '#e8384f', `${S.party.length}/${CM.MAX_PARTY} in party`)}
@@ -1611,7 +1790,7 @@
   }
 
   $menu.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool],[data-w],[data-size],[data-spray],[data-page],[data-buy],[data-use],[data-store],[data-take]');
+    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool],[data-w],[data-size],[data-spray],[data-page],[data-buy],[data-use],[data-store],[data-take],[data-dev]');
     if (!b || b.disabled) return;
     const d = b.dataset;
     if (d.a === 'home' || d.page) {
@@ -1636,6 +1815,7 @@
       updateHud();
       return renderMenu();
     }
+    if (d.dev) return devDo(d.dev, d.v);
     if (d.store) { S.storage.push(S.party.splice(+d.store, 1)[0]); save(); return renderMenu(); }
     if (d.take) { if (S.party.length < CM.MAX_PARTY) S.party.push(S.storage.splice(+d.take, 1)[0]); save(); return renderMenu(); }
     if (inv && d.a === 'close') return closeMenu();
@@ -1834,6 +2014,10 @@
     };
     const fx = S.x + DIRS[S.dir][0], fy = S.y + DIRS[S.dir][1], facing = !move && npcAt(fx, fy);
     if (facing) pill(facing.name, ...at(fx, fy, 1.95), '#1d2437e6');
+    // Stand still for a few seconds and your title shows over your head.
+    const rank = CM.title(S.alphaWins, S.f.champion);
+    if (rank && mode === 'world' && performance.now() - idleSince > 3000) pill(`★ ${rank} ★`, ...at(S.x, S.y, 2.2), '#b8860bf0');
+    alphas.forEach((a) => { if (a.chase) pill('!', ...at(a.px + (a.x - a.px) * a.t, a.py + (a.y - a.py) * a.t, 1.9), '#e8384ff0'); });
     const wp = waypoint();
     if (!wp) return;
     const [tx, ty] = where(), [sx, sy] = at(wp[0], wp[1], 1.9), far = Math.abs(wp[0] - S.x) + Math.abs(wp[1] - S.y);
@@ -1859,6 +2043,7 @@
       const cx = w <= 15 ? w / 2 : Math.max(7.5, Math.min(w - 7.5, tx + 0.5));
       const cy = h <= 14 ? h / 2 + 1.5 : Math.max(8.5, Math.min(h - 5.5, ty + 0.5));
       const sprites = [{ x: tx, y: ty, draw: me, fig: true }];
+      alphas.forEach((a) => sprites.push({ x: a.px + (a.x - a.px) * a.t, y: a.py + (a.y - a.py) * a.t, big: 1.8, draw: (g, sx, sy) => drawAlpha(g, a, sx, sy, time) }));
       for (let y = Math.floor(cy) - 11; y <= Math.floor(cy) + 7; y++) {
         for (let x = Math.floor(cx) - 12; x <= Math.floor(cx) + 12; x++) {
           const fn = spriteFor(x, y, time);
@@ -1889,12 +2074,15 @@
     };
     each((x, y, sx, sy) => drawTile(g, S.map, x, y, sx, sy, time, P, S));
     each((x, y, sx, sy) => { const fn = spriteFor(x, y, time); if (fn) fn(g, sx, sy); });
+    alphas.forEach((a) => drawAlpha(g, a, (a.px + (a.x - a.px) * a.t) * TILE - camX, (a.py + (a.y - a.py) * a.t) * TILE - camY, time, 1.6));
     me(g, px - camX, py - camY);
     overlays(g, px - camX, py - camY, time);
     guide(g, (x, y, up) => [x * TILE - camX + 16, y * TILE - camY + 28 - up * 26], time);
   }
 
   // ---------- Input & loop ----------
+  const DEV_CODE = 'iam100';
+  let typed = '';   // the last few keys pressed in the menu
   addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') { if (e.key === 'Escape') e.target.blur(); return; }
     const k = e.key.toLowerCase();
@@ -1913,6 +2101,14 @@
       if (k === 'r') return resetPuzzle();
       if (k === 'g') return spray();
       if (confirmKey && !e.repeat) return interact();
+    } else if (mode === 'menu' && k.length === 1 && (typed = (typed + k).slice(-DEV_CODE.length)) === DEV_CODE) {
+      // The secret word, typed anywhere in the menu, opens the developer tools.
+      typed = '';
+      forge = wardrobe = shop = null;
+      help = inv = false;
+      S.dev = S.dev || {};
+      page = 'dev';
+      return renderMenu();
     } else if (mode === 'menu' && inv && (k === 'escape' || k === 'e')) {
       return closeMenu();
     } else if (mode === 'menu' && k === 'escape') {

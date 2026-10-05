@@ -80,6 +80,25 @@ After the Ice gym Wren fits it with floats, and from then on it rides straight o
 - Your party holds **six** Creatamon. Forge a seventh and it goes to **Storage**, where it can be swapped in from the menu.
 - Potions and Revives can be used straight from the Bag (press E), as well as in battle.
 
+## Alphas and Alpha rank
+
+- Once the Gym Challenge is under way, **alpha Creatamon** prowl the open ground beside long grass: big, glowing red,
+  several levels above the local wildlife and with far more health.
+- They wander until you come within six tiles, then charge. If one touches you, you battle it. You can Run (it loses
+  interest for a few seconds), and they will not follow you into a town.
+- Beating one earns coins, a sure Power Card and **Alpha rank**. The titles, in order: Alpha I, II, III · King I, II, III ·
+  Emperor I, II, III · Conqueror I, II, III (1, 2, 3, 4, 6, 8, 10, 12, 15, 18, 21 and 24 alpha wins).
+- The Champion only accepts challengers ranked **Emperor I** or higher (10 alpha wins). Beating him makes your title **Champion**.
+- Stand still for three seconds and your title appears above your head. It is also shown in the menu.
+- In the 3D view long grass stands up out of the ground, and you wade through it.
+
+## Developer mode
+
+Open the menu (M) and type **iam100** to open the testing tools. There is no button for it; type the word again whenever
+you want them back. They offer switches for no wild battles, walking through walls and one-hit wins; complete the current objective or skip to the
+Champion match; spawn an alpha or add an alpha win; give coins, Creataballs, potions, cards, clothes and levels; reveal the
+map; teleport to any town.
+
 ## Creataballs, evolution and items
 
 - Forging a **new** Creatamon uses up a **Creataball**, and so does rebuilding one. Balls come from sparkles, badges and

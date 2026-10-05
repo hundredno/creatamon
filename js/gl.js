@@ -121,9 +121,10 @@ const GL3D = (() => {
       return [(col * CELL_W * RES + e) / w, (row * CELL_H * RES + e) / h, ((col + 1) * CELL_W * RES - e) / w, ((row + 1) * CELL_H * RES - e) / h];
     };
     const UP_Y = TALL * Math.cos(PITCH), UP_Z = -TALL * Math.sin(PITCH);
-    const stand = (s, i, x, y) => {
-      const z = y + FOOT;
-      quad(s, [x, UP_Y, z + UP_Z], [x + 1, UP_Y, z + UP_Z], [x + 1, 0, z], [x, 0, z], ...cellUV(s, i), 1, [x + 0.5, 0, z]);
+    // k: how many times life size the card stands (alphas are big).
+    const stand = (s, i, x, y, k = 1) => {
+      const z = y + FOOT, a = x + 0.5 - k / 2, b = x + 0.5 + k / 2;
+      quad(s, [a, UP_Y * k, z + UP_Z * k], [b, UP_Y * k, z + UP_Z * k], [b, 0, z], [a, 0, z], ...cellUV(s, i), 1, [x + 0.5, 0, z]);
     };
     // A person, standing upright with some depth to them: the sprite is cut into head, body and legs, each a slab whose
     // front shows that band of the picture, with the crown of the head and the outer sides closed in from its edge colours.
@@ -152,6 +153,8 @@ const GL3D = (() => {
 
     // The fixed sheet: upright rocks and mushrooms, then flat textures for building trees out of blocks.
     const FIXED = { k: 0, x: 1, m: 2 }, TEX = { leaf: 3, leafTop: 4, bark: 5, pine: 6, snow: 7 };
+    // Long grass stands up out of the ground: one strip of blades per kind of encounter tile.
+    const BLADES = { ',': 8, ';': 9, '*': 10, '"': 11 };
     fixed.g.setTransform(RES, 0, 0, RES, 0, 0);
     'kxm'.split('').forEach((ch) => drawUp(fixed.g, ch, FIXED[ch] * CELL_W, 8, 7, 0));
     [['leaf', '#2f7d3a'], ['leafTop', '#3f9148'], ['bark', '#6b4a2b'], ['pine', '#1f5a48'], ['snow', '#e8eef5']].forEach(([name, base]) => {
@@ -161,6 +164,17 @@ const GL3D = (() => {
         const v = Math.imul(i * 7919 + TEX[name] * 131, 2654435761) >>> 0;
         fixed.g.fillStyle = shade(base, i % 3 ? 0.84 : 1.1);
         fixed.g.fillRect(x0 + (v % 93) / 3, ((v >>> 8) % 117) / 3, 1 + ((v >>> 20) & 1), 2 / 3);
+      }
+    });
+    [[',', ['#3f9a3c', '#58b84a', '#2f7a2c'], null], [';', ['#2f7a3a', '#3f8f4a', '#1f5a2c'], null],
+      ['*', ['#4fa844', '#6cc85a', '#3a8a34'], ['#f08aa0', '#f6d643', '#f4f4f4', '#b58cf0']], ['"', ['#b9d8e2', '#dff0f5', '#8fb8c6'], null]].forEach(([ch, greens, blooms]) => {
+      const g = fixed.g, x0 = BLADES[ch] * CELL_W;
+      for (let i = 0; i < 30; i++) {
+        const v = Math.imul(i * 7919 + BLADES[ch] * 977, 2654435761) >>> 0;
+        const bx = x0 + 1 + (i / 30) * 30 + ((v % 7) - 3) / 4, tall = 17 + (v >>> 5) % 17, lean = (((v >>> 11) % 9) - 4) * 0.8;
+        g.fillStyle = greens[i % 3];
+        g.beginPath(); g.moveTo(bx - 1.5, CELL_H); g.lineTo(bx + lean, CELL_H - tall); g.lineTo(bx + 1.5, CELL_H); g.fill();
+        if (blooms && i % 4 === 1) { g.fillStyle = blooms[(v >>> 16) % blooms.length]; g.beginPath(); g.arc(bx + lean, CELL_H - tall, 1.9, 0, 7); g.fill(); }
       }
     });
     upload(fixed);
@@ -256,6 +270,14 @@ const GL3D = (() => {
               if (height(x, y + 1) < h) quad(ground, [x, h, y + 1], [x + 1, h, y + 1], [x + 1, 0, y + 1], [x, 0, y + 1], ...uv, ch === 'M' ? 1 : 0.8);
               if (height(x - 1, y) < h) quad(ground, [x, h, y], [x, h, y + 1], [x, 0, y + 1], [x, 0, y], ...uv, 0.6);
               if (height(x + 1, y) < h) quad(ground, [x + 1, h, y + 1], [x + 1, h, y], [x + 1, 0, y], [x + 1, 0, y + 1], ...uv, 0.7);
+            } else if (BLADES[ch] !== undefined) {
+              // Three rows of blades across the tile. Whoever stands in it is behind the front row and in front of the back one.
+              const uvb = cellUV(fixed, BLADES[ch]), hh = tileHash(x, y);
+              [0.14, 0.5, 0.9].forEach((dz, r) => {
+                const off = (((hh >>> (r * 5)) % 9) - 4) / 40, tall = 0.5 + ((hh >>> (r * 3 + 2)) % 5) / 40, flip = (hh >>> r) & 1;
+                quad(fixed, [x + off, tall, y + dz], [x + 1 + off, tall, y + dz], [x + 1 + off, 0, y + dz], [x + off, 0, y + dz],
+                  flip ? uvb[2] : uvb[0], uvb[1], flip ? uvb[0] : uvb[2], uvb[3], 0.86 + r * 0.07);
+              });
             } else if (ch === '#' || ch === 'T') {
               tree(x, y, tileHash(x, y), ch === 'T');
             } else if (FIXED[ch] !== undefined && !(ch === 'x' && S.smashed[`${id}:${x},${y}`])) {
@@ -283,8 +305,9 @@ const GL3D = (() => {
       GFX.shadows(false);
       live.slice(0, COLS * ROWS).forEach((sp, i) => {
         sp.draw(moving.g, (i % COLS) * CELL_W, Math.floor(i / COLS) * CELL_H + 8);
-        if (sp.fig) figure(moving, i, sp.x, sp.y); else stand(moving, i, sp.x, sp.y);
+        if (sp.fig) figure(moving, i, sp.x, sp.y); else stand(moving, i, sp.x, sp.y, sp.big || 1);
         if (sp.fig) blob(sp.x + 0.62, sp.y + 0.72, 0.42, 0.24);
+        if (sp.big) blob(sp.x + 0.6, sp.y + 0.86, 0.75, 0.4);
       });
       GFX.shadows(true);
 
