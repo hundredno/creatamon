@@ -211,3 +211,6 @@ button.card:hover:not(:disabled) { transform: translateY(-2px); }
 .howto { margin: 0; display: grid; grid-template-columns: 110px 1fr; gap: 7px 12px; }
 .howto dt { font-weight: bold; }
 .howto dd { margin: 0; }
+
+.steps { padding-left: 28px; font-size: 14px; line-height: 1.45; }
+.steps li { margin: 2px 0; }

@@ -195,15 +195,23 @@ const CM = (() => {
   };
   const xpToNext = (level) => 15 * level + 10;
   const xpYield = (foe) => 15 * foe.level;
-  // Returns number of levels gained.
-  const gainXp = (c, amount) => {
+  // ---- Limits that rise with each badge ----
+  // A Creatamon will not grow past the level cap: a little above the next Leader's best, so no gym can be out-levelled.
+  const LEVEL_CAPS = [11, 16, 21, 25, 29, 33, 37, 41, 45, 49, 53, 68];
+  const levelCap = (badges) => LEVEL_CAPS[Math.min(badges, LEVEL_CAPS.length - 1)];
+  // How many move cards one Creatamon can hold. Bound secret cards do not take up a slot. Health cards have no limit.
+  const MOVE_SLOTS = 6;
+  // Returns number of levels gained. XP is not banked at the cap.
+  const gainXp = (c, amount, cap = Infinity) => {
     let gained = 0;
+    if (c.level >= cap) { c.xp = 0; return 0; }
     c.xp += amount;
     while (c.xp >= xpToNext(c.level)) {
       c.xp -= xpToNext(c.level);
       c.level++;
       c.hp += 6;
       gained++;
+      if (c.level >= cap) { c.xp = 0; break; }
     }
     return gained;
   };
@@ -426,7 +434,7 @@ const CM = (() => {
     ELEMENTS, STRONG, SHAPES, CARDS, TIER_NAMES, EGG, MAX_PARTY, CLOTHES, SPECIES, DEX, WILD, ZONE_OF,
     STARTER_CARDS, ENCOUNTER_RATE,
     isEgg, setMax, battleMoves, DOMAIN_STRIKE, ITEMS, held, EVOLVE_AT, STAGE_NAMES, STAGE_DMG, STAGE_HP, canEvolve, evolve,
-    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp,
+    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp, levelCap, MOVE_SLOTS,
     useMove, pickMove, spawn, genWild, rollDrop,
   };
 })();

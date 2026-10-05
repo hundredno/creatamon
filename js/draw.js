@@ -234,6 +234,12 @@ const GFX = (() => {
           for (let i = 0; i < 4; i++) R(shade(base, 0.8), (j % 2) * 4 + i * 8, j * 8, 0.5, 7);
         }
         if (CM.charAt(id, x, y - 1) !== ch) R(shade(base, 1.12), 0, 0, 32, 2);
+        // A gym wears a big white roundel on the roof over its door.
+        const below = CM.WARPS[`${id}:${x},${y + 1}`];
+        if (ch === 'G' && below && below.map.startsWith('gym_')) {
+          C('#2c2c3c', 16, 16, 14); C('#ffffff', 16, 16, 12.5); C(tintOf(CM.TINT[k]), 16, 16, 9);
+          g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(sx + 16, sy + 9.5); g.lineTo(sx + 21.5, sy + 16); g.lineTo(sx + 16, sy + 22.5); g.lineTo(sx + 10.5, sy + 16); g.fill();
+        }
         break;
       }
       case 'W': {
@@ -509,6 +515,15 @@ const GFX = (() => {
         R(c, a - r, b - 1 / 3, r * 2, 2 / 3); R(c, a - 1 / 3, b - r, 2 / 3, r * 2); R('#ffffff', a - r * 0.35, b - r * 0.35, r * 0.7, r * 0.7);
       });
       g.globalAlpha = 1;
+    } else if (kind === 'banner') {
+      // A gym banner: a tall pole flying the element's colours, with a beacon on top that pulses until the badge is won.
+      const { color, dark } = ELEMENTS[o.el], wave = Math.sin(time / 280 + sx) * 1.2, pulse = 0.5 + 0.5 * Math.sin(time / 320);
+      R('#0003', 10, 28, 12, 3); R('#3a2412', 14.5, -6, 3, 36); R('#8a6a3b', 15, -6, 1, 36);
+      if (!o.won) { g.globalAlpha = 0.25 + 0.35 * pulse; C('#fff3a8', 16, -5, 5 + pulse * 2.5); g.globalAlpha = 1; }
+      C(o.won ? '#9a9a9a' : '#ffd24a', 16, -5, 2.6);
+      R(dark, 17.5, -2, 14, 15); R(color, 17.5, -1 + wave * 0.3, 13, 13); R(shade(color, 1.25), 17.5, -1 + wave * 0.3, 13, 2);
+      g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(sx + 24, sy + 2 + wave * 0.3); g.lineTo(sx + 28, sy + 6 + wave * 0.3); g.lineTo(sx + 24, sy + 10 + wave * 0.3); g.lineTo(sx + 20, sy + 6 + wave * 0.3); g.fill();
+      R(dark, 17.5, 13, 4, 3 + wave); R(dark, 26.5, 13, 4, 3 - wave);
     } else if (kind === 'C') {
       R('#0003', 3, 27, 26, 4); R('#566070', 4, 6, 24, 23); R('#8a94a6', 5.5, 7.5, 21, 20); R('#6c7688', 5.5, 24, 21, 3.5);
       R('#566070', 4, 16, 24, 2); R('#566070', 15, 6, 2, 23);

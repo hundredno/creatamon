@@ -43,6 +43,18 @@ assert.strictEqual(r.eff, 2);
 assert.ok(b.hp < 50 && b.hp >= 0);
 assert.deepStrictEqual(CM.useMove(a, b, CARDS.tsunami_blast, () => 0.99), { miss: true });
 assert.strictEqual(CM.gainXp(a, 25 + 40), 2);
+// Growth stops at the level cap, which rises with every badge and always clears the next Leader's best.
+{
+  const c = CM.create({ name: 'Cap', element: 'Fire', shape: 'Beast', moves: ['ember'] });
+  CM.gainXp(c, 1e6, CM.levelCap(0));
+  assert.strictEqual(c.level, CM.levelCap(0));
+  assert.strictEqual(CM.gainXp(c, 1e6, CM.levelCap(0)), 0, 'no growth past the cap');
+  GYMS.forEach((g, i) => {
+    assert.ok(CM.levelCap(i) >= Math.max(...g.team.map((t) => t[1])), `${g.el}: cap below the Leader`);
+    assert.ok(CM.levelCap(i + 1) > CM.levelCap(i));
+  });
+  assert.ok(CM.MOVE_SLOTS >= CM.STARTER_CARDS.filter((id) => CARDS[id].kind === 'move').length);
+}
 assert.strictEqual(a.level, 3);
 a.hp = 10;
 assert.ok(CM.useMove(a, b, CARDS.mend, () => 0).heal > 0);
@@ -235,6 +247,21 @@ stages.forEach(([id, done, before], i) => {
   assert.ok(can(id), `stage ${i}: cannot reach ${id}`);
   later.slice(0, 1).forEach((n) => assert.ok(!can(n), `stage ${i}: ${n} reachable too early`));
   done();
+});
+// Nobody gets ahead of a gym: the road on from each town stays shut until its badge is won.
+{
+  const early = { ...newS(), beaten: { b1: true }, f: { start: true, rival1: true, grove: true, endorsed: true, ceremony: true, cyril1: true }, smashed: all };
+  const jo = NPCS.find((n) => n.id === 'b2');
+  assert.ok(jo.need(early) && !jo.need({ ...early, badges: { Grass: true } }), 'Farmhand Jo waits for the Grass Badge');
+  assert.ok(!reach(early, false).has('world:16,12'), 'Brinemouth reachable without the Grass Badge');
+  const one = { ...early, badges: { Grass: true }, beaten: { b1: true, b2: true } };
+  assert.ok(reach(one, false).has('world:16,12') && !reach(one, false).has('world:27,9'), 'Brinecut Tunnel open without the Water Badge');
+}
+// Every gym is flagged by a pair of banners that do not shut its door.
+GYMS.forEach((g) => {
+  const [dx, dy] = CM.gymDoor(g.el);
+  assert.strictEqual(NPCS.filter((n) => n.kind === 'banner' && n.el === g.el).length, 2);
+  assert.ok(!NPCS.some((n) => n.kind === 'banner' && n.x === dx && n.y === dy + 1), `${g.el}: banner in the doorway`);
 });
 // By the end every chest and every person can be reached.
 const end = reach(S, true);

@@ -406,9 +406,10 @@
   rect(3, 22, 22, 33, '.'); gymHall(10, 23, 'Grass'); house(17, 23); set(18, 28, 'H'); rect(14, 30, 21, 32, '*');
   rect(7, 27, 16, 27, '='); rect(7, 27, 7, 33, '='); rect(16, 21, 16, 27, '=');
   area('Furrowfield', 3, 21, 22, 33);
-  // Route 5: a river with one bridge
-  rect(14, 14, 18, 20, '.'); rect(6, 17, 23, 18, '~'); rect(16, 17, 16, 18, 'b');
+  // Route 5: a river with one bridge, at the far end of the bank
+  rect(8, 14, 18, 20, '.'); rect(6, 17, 23, 18, '~'); rect(9, 17, 9, 18, 'b');
   rect(14, 14, 15, 16, ','); rect(17, 19, 18, 20, ','); rect(17, 14, 18, 15, '*'); set(16, 13, '=');
+  rect(10, 19, 13, 20, ','); rect(10, 14, 12, 15, '*');
   area('Route 5', 6, 13, 23, 20, [10, 13], [70, 28, 2]);
   // Brinemouth, by the sea
   rect(2, 1, 25, 3, '~'); rect(3, 4, 24, 12, 'c'); gymHall(6, 5, 'Water'); house(19, 5); set(14, 10, 'H'); set(22, 2, '.'); set(25, 9, 'c');
@@ -472,6 +473,47 @@
   area('Route 10', 70, 52, 74, 79, [50, 54], [10, 50, 40]);
   rect(64, 80, 97, 94, 'c'); hall(77, 81, 'League', null, null, 7); hall(90, 81, 'Plant'); house(65, 82); house(86, 89); set(70, 88, 'H');
   area('Summit City', 64, 80, 97, 94);
+
+  // ---------- Winding roads ----------
+  // Hedges, ridges and thickets laid across the routes so that each one doubles back on itself.
+  // Every barrier leaves a gap at one end; the gaps alternate, so the way through is a zigzag.
+  const PLAIN = '.';
+  // Lays a footpath along a line of corners, over open grass only (encounter tiles stay as they are).
+  const trail = (...pts) => pts.slice(1).forEach(([bx, by], i) => {
+    const [ax, ay] = pts[i];
+    for (let x = Math.min(ax, bx); x <= Math.max(ax, bx); x++) for (let y = Math.min(ay, by); y <= Math.max(ay, by); y++) if (g[y][x] === PLAIN) g[y][x] = '=';
+  });
+  // Route 1
+  rect(23, 90, 43, 90, '.'); rect(27, 88, 27, 91, '#'); rect(32, 89, 32, 92, '#'); rect(37, 88, 37, 91, '#'); rect(41, 89, 41, 92, '#');
+  trail([23, 90], [26, 90], [26, 92], [28, 92], [28, 88], [33, 88], [33, 92], [38, 92], [38, 88], [42, 88], [42, 90], [43, 90]);
+  // Route 2
+  rect(52, 72, 52, 80, '.'); rect(50, 78, 53, 78, '#'); rect(51, 76, 54, 76, '#'); rect(50, 74, 53, 74, '#');
+  trail([52, 80], [52, 79], [54, 79], [54, 77], [50, 77], [50, 75], [54, 75], [54, 73], [52, 73], [52, 72]);
+  // The Wildlands: the lake is walled off to the west, and the east bank is the long way round
+  rect(37, 60, 37, 71, '#'); rect(51, 64, 64, 64, '#'); rect(53, 58, 53, 63, '#');
+  // Route 3 and Gritstone Mine
+  rect(12, 48, 26, 48, '.'); rect(23, 47, 23, 50, '#'); rect(19, 46, 19, 49, '#'); rect(15, 47, 15, 50, '#');
+  trail([26, 48], [24, 48], [24, 46], [20, 46], [20, 50], [18, 50], [18, 48], [16, 48], [16, 46], [14, 46], [14, 48], [12, 48]);
+  rect(6, 46, 10, 46, '^'); rect(4, 37, 8, 37, '^');
+  // Route 12: baffles inside each sweep of the steppe
+  rect(16, 56, 16, 57, '#'); rect(8, 57, 8, 58, '#'); rect(8, 60, 8, 61, '#'); rect(14, 61, 14, 62, '#'); rect(16, 64, 16, 65, '#'); rect(10, 65, 10, 66, '#');
+  // Brinecut Tunnel and Route 4
+  rect(37, 14, 40, 14, '^'); rect(36, 17, 39, 17, '^');
+  rect(37, 25, 41, 25, '#'); rect(36, 28, 40, 28, '#'); rect(37, 32, 41, 32, '#'); rect(36, 36, 40, 36, '#');
+  // The Forgeway
+  rect(48, 48, 56, 48, '.'); rect(50, 45, 50, 52, '#'); rect(54, 44, 54, 51, '#');
+  trail([48, 48], [49, 48], [49, 44], [52, 44], [51, 44], [51, 48], [53, 48], [53, 52], [55, 52], [55, 48], [56, 48]);
+  // Route 6 and Gloamwood
+  rect(82, 40, 82, 43, '^'); rect(89, 41, 89, 44, '^');
+  rect(90, 51, 97, 51, '#'); rect(88, 56, 92, 56, '#'); rect(88, 59, 95, 59, '#');
+  // Route 7
+  rect(65, 30, 70, 30, '#'); rect(64, 25, 69, 25, 'T');
+  // Route 9, on both banks
+  rect(81, 10, 81, 16, 'T'); rect(90, 11, 90, 18, 'T');
+  // Route 14
+  rect(109, 12, 110, 12, 'T'); rect(109, 9, 109, 11, 'T'); rect(101, 17, 102, 17, 'T'); rect(102, 18, 102, 20, 'T'); rect(106, 14, 106, 16, 'T');
+  // Route 10
+  rect(70, 57, 73, 57, '#'); rect(71, 62, 74, 62, 'T'); rect(70, 67, 73, 67, 'T'); rect(71, 73, 74, 73, 'T');
 
   MAPS.world = {
     id: 'world', name: 'Galdra', rows: g.map((row) => row.join('')),
@@ -601,6 +643,12 @@
     MAPS[map].el = gm.el;
     person(`leader_${gm.el}`, map, x, y, gm.name, gm.look, { gym: gm });
   });
+  // A banner stands either side of every gym door, so the hall is easy to pick out from across town.
+  const gymDoor = (el) => Object.keys(WARPS).find((k) => WARPS[k].map === `gym_${el}`).split(':')[1].split(',').map(Number);
+  GYMS.forEach((gm) => {
+    const [dx, dy] = gymDoor(gm.el);
+    [-1, 1].forEach((side) => person(`banner_${gm.el}_${side}`, 'world', dx + side, dy + 1, `${gm.town} Gym`, null, { kind: 'banner', el: gm.el, sign: gm }));
+  });
   [[4, 11], [4, 9], [4, 7], [4, 5], [4, 3]].forEach(([x, y], i) => person(`quiz${i + 1}`, 'gym_Normal', x, y, 'Gatekeeper', LOOKS.staff,
     { quiz: i + 1, show: (S) => S.quiz <= i }));
 
@@ -624,6 +672,7 @@
   person('staff', 'world', 37, 46, 'League Staff', LOOKS.staff, { show: (S) => !f(S).ceremony });
   person('nettie_kiln', 'world', 37, 46, 'Nettie', LOOKS.nettie, { show: (S) => f(S).ceremony && S.badges.Water && !f(S).nettie1 });
   person('guard_r3', 'world', 27, 48, 'League Staff', LOOKS.staff, { show: (S) => !f(S).ceremony });
+  person('guard_tunnel', 'world', 26, 9, 'League Staff', LOOKS.staff, { show: (S) => !S.badges.Water });
   person('holler_r4', 'world', 40, 41, 'Team Holler Grunt', LOOKS.holler, { show: (S) => !S.badges.Water });
   // Gritstone Mine, Furrowfield, Brinemouth
   person('cyril_mine', 'world', 4, 40, 'Cyril', LOOKS.cyril, { show: (S) => !f(S).cyril1 });
@@ -693,12 +742,14 @@
     [['Thinkling', 44], ['Mesmoth', 45], ['Oraclynx', 45]], 'I dreamed you would lose. Shall we check?', 'My dreams are not what they were.', ['psy_wave', 'hp250']);
 
   // Trainers who stand in the road. They must be beaten to get past, and then move on.
-  const blocker = (id, x, y, name, look, team, pre, post) =>
-    person(id, 'world', x, y, name, look, { team, pre, post, reward: ['hp30'], show: (S) => !S.beaten[id] });
+  // need(S): a reason they will not battle yet (and so will not move), or null.
+  const blocker = (id, x, y, name, look, team, pre, post, need) =>
+    person(id, 'world', x, y, name, look, { team, pre, post, need, reward: ['hp30'], show: (S) => !S.beaten[id] });
   blocker('b1', 37, 55, 'Gate Trainer Hale', { hair: '#3a2412', hat: 'headband', hatColor: '#e0483c', top: 'tank', topColor: '#f4f4f4', bottomColor: '#1f5f9e' },
     [['Breezlet', 7], ['Pebblit', 8]], 'Kilnford is through here, and so am I. Nobody walks in without a battle!', 'In you go. Mind the ceremony crowds.');
   blocker('b2', 16, 21, 'Farmhand Jo', { skin: '#d9a066', hair: '#8a5a2b', hairStyle: 'pigtails', hat: 'straw_hat', top: 'overalls', topColor: '#55a8ee', bottomColor: '#1f5f9e' },
-    [['Honeycub', 10], ['Gustail', 11]], 'Hold it! Leader Thatch says badge winners owe me a battle on the way out.', 'Fair and square. The bridge is just ahead.');
+    [['Honeycub', 10], ['Gustail', 11]], 'Hold it! Leader Thatch says badge winners owe me a battle on the way out.', 'Fair and square. The bridge is at the far end of the bank.',
+    (S) => (S.badges.Grass ? null : 'Farmhand Jo: Nobody leaves Furrowfield for the bridge without the Grass Badge. Go and see Leader Thatch first!'));
   blocker('b3', 38, 20, 'Tunnel Rat Pim', { hair: '#9a9a9a', hairStyle: 'mohawk', hat: 'miner_helmet', top: 'overalls', topColor: '#566070', bottomColor: '#2c2c3c' },
     [['Boltnut', 15], ['Cogshell', 16]], 'You made it through my tunnel? Not without paying the toll: one battle!', 'Toll paid. Kilnford is down the hill.');
   blocker('b4', 92, 39, 'Pilgrim Asha', { skin: '#a86b3c', hair: '#1c1c28', hairStyle: 'bun', top: 'poncho', topColor: '#e3c98a', bottom: 'long_skirt', bottomColor: '#8a5a2b' },
@@ -713,7 +764,7 @@
     [['Anviltusk', 52], ['Pyreking', 52], ['Oraclynx', 53]], 'One of us walks into Summit City. I trained all year for this!', 'All year, and it is you. Win it for both of us.');
 
   Object.assign(CM, {
-    MAPS, WARPS, TINT, AREAS, CHESTS, NPCS, GYMS, TEAMS, LOOKS, START, DIRS, GATE, GYM_ORDER, NICKS, makeTeam,
+    MAPS, WARPS, TINT, AREAS, CHESTS, NPCS, GYMS, TEAMS, LOOKS, START, DIRS, GATE, GYM_ORDER, NICKS, makeTeam, gymDoor,
     badgeCount, charAt, gateOpen, passable, groundAt, areaAt, initPuzzle, checkSolved, step, arrive, toggleFire, teleAt, GUSTS,
   });
 })(typeof module !== 'undefined' ? require('./core.js') : CM);

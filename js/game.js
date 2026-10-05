@@ -17,6 +17,7 @@
   let mode = 'title';    // title | world | busy | menu
   let move = null;       // in-progress step {pts: tiles passed through, t: 0..1, n: steps}
   let help = false;      // the How to play page is open
+  let inv = false;       // the inventory page is open
   let forge = null;      // open Forge editor {idx, draft, avail}
   let wardrobe = null;   // open character editor {isNew, draft}
   let B = null;          // current battle {me, foe}
@@ -120,7 +121,16 @@
   const pickupAt = (x, y) => { const c = chestAt(x, y); return c && !S.chests[`${S.map}:${x},${y}`] ? c : null; };
   const blocked = (x, y) => !!npcAt(x, y);
   const hasFighter = () => S.party.some((c) => c.hp > 0);
-  const updateHud = () => { $('area').textContent = `${CM.areaAt(S.map, S.x, S.y).name} · ${badgeCount()}/${TOTAL} badges`; };
+  // Once the Gym Challenge is under way, the HUD points at the next gym's door.
+  const ARROWS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
+  const compass = () => {
+    const gm = CM.GYMS.find((m) => !S.badges[m.el]);
+    if (!gm || !S.f.ceremony || S.map !== 'world') return '';
+    const [dx, dy] = CM.gymDoor(gm.el), ox = dx - S.x, oy = dy + 1 - S.y, far = Math.abs(ox) + Math.abs(oy);
+    if (far < 2) return ` · ${gm.town} Gym: right here`;
+    return ` · ${gm.town} Gym ${ARROWS[(Math.round(Math.atan2(oy, ox) / (Math.PI / 4)) + 8) % 8]} ${far} steps`;
+  };
+  const updateHud = () => { $('area').textContent = `${CM.areaAt(S.map, S.x, S.y).name} · ${badgeCount()}/${TOTAL} badges${compass()}`; };
 
   function goTo(map, x, y, dir = S.dir) {
     Object.assign(S, { map, x, y, dir, surf: false });
@@ -168,6 +178,7 @@
       S.heal = [S.map, S.x, S.y];
       if (S.party.some((c) => c.hp < CM.maxHp(c))) {
         healAll();
+        if (!S.tips.pad) { S.tips.pad = true; await talk('This is a heal pad. Step on one any time to restore your Creatamon for free. It also becomes the place you return to if you lose a battle.'); }
         await talk('The heal pad hums... your Creatamon are fully restored!');
       }
     }
@@ -199,6 +210,8 @@
     if (habitat && area.lv && hasFighter() && grace-- <= 0 && Math.random() < CM.ENCOUNTER_RATE) {
       grace = 3;
       await run(async () => {
+        await tip('wild', ['Something rustles! Tall grass, flowers, forest floor and cave rubble hide wild Creatamon. Walking through them can start a battle at any step.',
+          'Wild battles are how your Creatamon earn XP and grow, and wild Creatamon sometimes drop Power Cards. If yours is hurt, press Run to get away, and keep to the paths to avoid them.']);
         const foe = CM.genWild(habitat, area.lv);
         const result = await battle([foe], { zone: habitat });
         if (result === 'win') {
@@ -217,6 +230,8 @@
   async function whiteout() {
     $battle.hidden = true;
     await say('All your Creatamon fainted! You hurry back to the last heal pad...');
+    await tip('lost', ['Losing costs you nothing: your Creatamon are healed and you can try again.',
+      'To do better next time: use Potions from the Bag during battle, pick attacks the foe is weak to, slot more health cards at the Forge, or win a few easy battles first to level up.']);
     goTo(...S.heal, 'down');
     healAll();
   }
@@ -275,7 +290,7 @@
     }
     if (ch === 'B') {
       const solved = CM.toggleFire(S.map, P, MAPS[S.map].fires.indexOf(k));
-      if (solved) { S.solved[S.map] = true; return talk('All five braziers roar to life. The gate to the Leader swings open!'); }
+      if (solved) { S.solved[S.map] = true; return talk('All seven braziers roar to life. The gate to the Leader swings open!'); }
       return save();
     }
     if (ch === 'v' && !P.fill[k]) return talk('A deep pit. Something heavy might fill it.');
@@ -376,6 +391,8 @@
   async function trainer(npc) {
     if (S.beaten[npc.id]) return say(`${npc.name}: ${npc.post}`);
     if (!hasFighter()) return say(`${npc.name}: Come back with a Creatamon that can fight.`);
+    const wait = npc.need && npc.need(S);
+    if (wait) return say(wait);
     await say(`${npc.name}: ${npc.pre}`);
     if (!await duel(npc.name, npc.team)) return;
     S.beaten[npc.id] = true;
@@ -455,7 +472,7 @@
       await sayAll(['Prof. Willow: Power Cards hide in chests, and wild Creatamon sometimes drop them. Rare ones always do.',
         'Match a move\'s element to your Creatamon\'s element for extra power.',
         'Some cards work outside battle too. Rock Smash breaks cracked rocks, and Surf carries you over water.',
-        'You can rebuild a Creatamon at the Forge any time, and even give it a picture of your own. Press M.']);
+        'You can rebuild a Creatamon at the Forge for a Creataball, and even give it a picture of your own. Press M.']);
     },
     finn_wedge: async () => {
       await say('Finn: My brother is watching. I am not holding back this time!');
@@ -486,6 +503,7 @@
       await say('Wren: Slot Rock Smash onto a Creatamon and it can break those rocks. The Grass gym in Furrowfield is past the mine. Good luck!');
       flag('ceremony');
     },
+    guard_tunnel: () => say('League Staff: Brinecut Tunnel is for challengers who have beaten Leader Marina. Win the Water Badge and I will let you through.'),
     guard_r3: () => say('League Staff: The opening ceremony is about to begin at the gym hall. Every challenger must attend!'),
     holler_r4: () => say('Team Holler Grunt: Route 4 is SHUT. We are rehearsing our cheers for Nettie! Come back when you have the Water Badge or something.'),
     nettie_kiln: async () => {
@@ -650,6 +668,11 @@
   };
 
   async function meet(npc) {
+    if (npc.sign) {
+      const n = CM.GYM_ORDER.indexOf(npc.el), short = n - badgeCount();
+      return say(`${npc.name}. ${npc.sign.name} awaits challengers. ${S.badges[npc.el] ? 'Your name is already on the roll of winners!'
+        : short > 0 ? `Challengers need ${n} badge${n === 1 ? '' : 's'}: you are ${short} short.` : 'The doors are open to you.'}`);
+    }
     if (npc.gym) return leader(npc);
     if (npc.quiz) return quiz(npc);
     if (SCRIPTS[npc.id]) return SCRIPTS[npc.id](npc);
@@ -658,35 +681,41 @@
 
   // The controls, shown at the very start and again from the menu's How to play button.
   const HOW_TO = [
+    ['The idea', 'Creatamon are creatures that battle for you by trading attacks in turns. Beat the Leader of all 11 gyms, then win the Champion Cup.'],
+    ['Words', 'HP is health: at 0 a Creatamon faints. XP is experience: enough of it raises a level, which makes a Creatamon stronger. A badge is the prize for beating a gym.'],
     ['Move', 'Arrow keys or W A S D.'],
     ['Talk, read, use', 'Face something and press Enter (or Space, or Z). The same key moves text along.'],
+    ['Inventory', 'Press E to see your items and unused Power Cards at any time.'],
     ['Menu', 'Press M or Esc. Your next goal is at the top; your party, Forge, Bag, Wardrobe and sprays are below it.'],
-    ['Forge', 'Creatamon are built, not caught. Slot move cards and health cards into one. A new Creatamon costs a Creataball; rebuilding is free.'],
+    ['Forge', 'Creatamon are built, not caught. Each holds up to six move cards and as many health cards as you like. Forging a new Creatamon costs a Creataball, and so does rebuilding one.'],
     ['Battle', 'Pick a move. Matching a move to your Creatamon\'s element hits harder, and so does hitting a weakness. Bag uses a potion; Switch swaps Creatamon.'],
-    ['Grow', 'Winning earns XP. At levels 16 and 36 a Creatamon can Evolve from the menu for free health and stronger attacks. Give each one an item to hold.'],
+    ['Grow', 'Every Creatamon of yours that attacked a foe earns XP when it faints, up to a level limit that rises with each badge. At levels 16 and 36 a Creatamon can Evolve from the menu for free health and stronger attacks. Give each one an item to hold.'],
     ['Pick-ups', 'Sparkles on the ground are cards, items, clothes and spray designs. Walk over them.'],
     ['Heal', 'Step on a pink heal pad to restore your whole party. If everyone faints you return to the last pad you used.'],
     ['Gyms', 'Each town\'s gym has a puzzle before its Leader. Press R to start a puzzle over. In gyms you can use Max Mode once per battle.'],
-    ['Field moves', 'Rock Smash breaks cracked rocks and Surf crosses water: slot the card on a Creatamon, face the obstacle and press Enter.'],
+    ['Field moves', 'Rock Smash breaks cracked rocks and Surf crosses water: slot the card on a Creatamon (a rebuild, so keep a Creataball spare), face the obstacle and press Enter.'],
     ['Spray paint', 'Press G to spray your chosen design on the ground in front of you.'],
   ];
   async function intro() {
     await run(async () => {
-      await sayAll(['Welcome to Creatamon! A quick word on how to play.',
-        'Move with the arrow keys or W A S D. Press Enter to talk to people and to move text like this along.',
-        'Press M to open the menu. It always tells you where to go next, and has a How to play page if you forget anything.',
-        'Sparkles on the ground are things to pick up: walk over them. Pink pads heal your Creatamon.',
-        'That is all you need for now. The rest is explained as you meet it.']);
+      await sayAll(['Welcome to Creatamon! Press Enter (or click this box) to read on.',
+        'Creatamon are creatures that battle for you. You never fight yourself: you tell your Creatamon which attack to use, and it takes turns trading hits with the other side.',
+        'Your goal: travel from town to town, beat the Leader of each of the 11 gyms to win its badge, then win the Champion Cup.',
+        'Walk with the arrow keys or W A S D. To talk to someone, walk up to them, face them and press Enter.',
+        'Lost? Press M for the menu. The red box at the top always says exactly where to go next, and the How to play button explains everything again.',
+        'Two things to look out for: sparkles on the ground are free gifts (walk over them), and a pink pad with a cross heals your Creatamon when you step on it.',
+        'Now let us get you a Creatamon of your own.']);
       await sayAll([`Finn: ${you()}! There you are! My big brother is home. THE Champion Vex!`,
         'Champion Vex: So this is the friend Finn never stops talking about.',
-        'Champion Vex: In Galdra, Creatamon are not caught. They are created, forged from Power Cards.',
-        'Move cards teach a Creatamon its attacks. Health cards make it tougher.',
+        'Champion Vex: In Galdra, Creatamon are not caught. They are created: you build one yourself out of Power Cards.',
+        'There are two kinds of card. A move card is an attack your Creatamon can use in battle. A health card gives it more HP, so it can take more hits before it faints.',
         `Champion Vex: I brought a starter set for each of you. Go on, ${GENDERS[S.player.gender].title}: forge your very first Creatamon!`]);
       CM.STARTER_CARDS.forEach((id) => addCard(id));
       addItem('creataball', 2);
       addItem('potion', 3);
       await sayAll(['You got 6 Power Cards, 2 Creataballs and 3 Potions!',
-        'Champion Vex: A Creataball is what a new Creatamon is forged inside. Each new one you make uses up a ball, so spend them wisely.']);
+        'Champion Vex: A Creataball is what a new Creatamon is forged inside. Each new one you make uses up a ball, and so does rebuilding one, so spend them wisely.',
+        'The Forge is about to open. Follow the numbered steps at the top of it.']);
       flag('start');
       openMenu();
       openForge(null);
@@ -867,13 +896,20 @@
 
   async function grantXp(me, foe, bonus) {
     const xp = Math.round(CM.xpYield(foe) * (bonus ? 1.5 : 1));
+    const from = me.level, cap = CM.levelCap(badgeCount()), badges = badgeCount();
+    if (from >= cap) {
+      CM.gainXp(me, 0, cap);
+      updateBars();
+      return tip('cap', `${me.name} is at level ${from}. With ${badges} badge${badges === 1 ? '' : 's'} a Creatamon cannot grow past level ${cap}. The next badge lifts the limit.`);
+    }
     await say(`${me.name} gained ${xp} XP!`);
-    const from = me.level;
-    const levelled = CM.gainXp(me, xp);
+    const levelled = CM.gainXp(me, xp, cap);
     updateBars();
     if (levelled) {
-      renderBattle();
+      if (me === B.me) renderBattle();
       for (let l = from + 1; l <= me.level; l++) await say(`${me.name} grew to level ${l}!`);
+      await tip('level', ['Level up! XP comes from beating other Creatamon. Every level makes a Creatamon stronger, faster and tougher.',
+        'Every Creatamon of yours that attacked the foe gets the XP, so swapping one in for a hit helps it grow too.']);
       if (CM.canEvolve(me)) await say(`${me.name} is ready to evolve! Open the menu (M) after the battle.`);
     }
   }
@@ -884,7 +920,7 @@
   // max (the player may use Max Mode once), foeMax (their last Creatamon enters Max Mode).
   async function battle(foes, opts) {
     mode = 'busy';
-    B = { foe: foes[0], me: S.party.find((c) => c.hp > 0), maxUsed: false, domain: null };
+    B = { foe: foes[0], me: S.party.find((c) => c.hp > 0), maxUsed: false, domain: null, hit: new Set() };
     try {
       return await fight(foes, opts);
     } finally {
@@ -913,15 +949,23 @@
         : B.foe.rare ? `Whoa! A rare ${B.foe.name} appeared!` : `A wild ${B.foe.name} appeared!`);
     }
     await say(`Go, ${B.me.name}!`);
-    await tip('battle', ['Choose a move on the left. A move hits harder if it matches your Creatamon\'s element, or if the foe is weak to it.',
-      'On the right: Switch swaps Creatamon, Bag uses a potion, Run flees a wild battle.']);
+    await tip('battle', ['Your first battle! Here is how it works.',
+      'Your Creatamon is at the bottom left, the foe at the top right. The green bar by each one is its HP (health). Attacks shrink it, and when it runs out that Creatamon faints.',
+      'You take turns. Each turn you pick one attack from the buttons on the left, then the foe picks one. The faster Creatamon goes first.',
+      'Each attack shows its element and its power: higher power hurts more. An attack of your Creatamon\'s own element gets a bonus.',
+      'Elements beat each other like rock-paper-scissors: Water douses Fire, Fire burns Grass, Grass soaks up Water. "Super effective" means you picked well and did double damage.',
+      'The buttons on the right: Bag uses a Potion to heal, Switch swaps in another of your Creatamon, Run escapes from a wild Creatamon (never from a person).',
+      'Make every foe faint and you win. If all of yours faint you lose, but you just wake up at the last heal pad. Good luck!']);
 
     // Deals with anyone who has fainted. Returns 'win' | 'lose', 'next' if someone new came out, or null.
     const settle = async () => {
       if (B.foe.hp <= 0) {
         await say(`${foeTag}${shownName(B.foe)} fainted!`);
         endMax(B.foe);
-        await grantXp(B.me, B.foe, !!opts.trainer);
+        // Everyone still standing who attacked this foe earns the XP, starting with whoever is out now.
+        const earners = S.party.filter((c) => c.hp > 0 && B.hit.has(c)).sort((a, b) => (b === B.me) - (a === B.me));
+        for (const c of earners.length ? earners : [B.me]) await grantXp(c, B.foe, !!opts.trainer);
+        B.hit.clear();
         const next = foes.find((f) => f.hp > 0);
         if (!next) return 'win';
         B.foe = next;
@@ -983,6 +1027,7 @@
 
       let result = null;
       for (const who of order) {
+        if (who === 'me' && !myMove.heal) B.hit.add(B.me);
         await attack(who, who === 'me' ? myMove : foeMove);
         if (who === 'me' && opts.ally && B.foe.hp > 0) {
           await say(opts.ally);
@@ -1029,13 +1074,21 @@
   }
   function closeMenu() {
     forge = wardrobe = null;
-    help = false;
+    help = inv = false;
     $menu.hidden = true;
     mode = 'world';
+    // Straight after the very first Creatamon is made, point the way to the first battle.
+    if (S.party.length && S.f.start && !S.tips.made) {
+      S.tips.made = true;
+      talk([`${S.party[0].name} is ready! It follows you everywhere, out of sight until a battle starts.`,
+        'Finn is standing just below you, next to the pink heal pad. Walk up to him, face him and press Enter to have your first battle.',
+        'Press M whenever you want to see your Creatamon, change its cards or check where to go next.']);
+    }
     save();
   }
 
   function renderMenu() {
+    if (inv) return renderInv();
     if (help) return renderHelp();
     if (wardrobe) return renderWardrobe();
     if (forge) return renderForge();
@@ -1063,9 +1116,10 @@
         <span><button data-a="howto">How to play</button> <button data-a="wardrobe">Wardrobe</button> <button data-a="close">Close (Esc)</button></span></header>
       <p class="goal"><b>Next:</b> ${esc(objective())}</p>
       <div class="badges">${CM.GYM_ORDER.map((el) => `<span class="${S.badges[el] ? 'won' : ''}" style="--c:${ELEMENTS[el].color}" title="${el} Badge">${el}</span>`).join('')}</div>
-      <h3>Party (${S.party.length}/${CM.MAX_PARTY})</h3>
+      <h3>Party (${S.party.length}/${CM.MAX_PARTY}) · level limit ${CM.levelCap(badgeCount())}, raised by each badge</h3>
       ${party || '<p class="empty">No Creatamon yet. Forge one from your Power Cards!</p>'}
       <button class="plain primary" data-a="new" ${S.party.length >= CM.MAX_PARTY || !S.items.creataball ? 'disabled' : ''}>＋ Forge a new Creatamon (uses 1 Creataball, you have ${S.items.creataball || 0})</button>
+      <small class="empty">Rebuilding a Creatamon also uses 1 Creataball.</small>
       <h3>Bag</h3>
       <div class="dex">${Object.keys(ITEMS).filter((id) => S.items[id] > 0).map((id) =>
     `<span title="${ITEMS[id].desc}"><b>${ITEMS[id].name}</b> ×${S.items[id]} <small>${ITEMS[id].desc}</small></span>`).join('') || '<p class="empty">Empty.</p>'}</div>
@@ -1081,6 +1135,17 @@
     : '<span class="unseen">???</span>')).join('')}</div>`;
     $menu.querySelectorAll('[data-sprite]').forEach((cv) => drawCreature(cv, S.party[cv.dataset.sprite], false));
     $menu.querySelectorAll('[data-spraycv]').forEach((cv) => { const g = cv.getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0); drawSpray(g, cv.dataset.spraycv, 0, 0); });
+  }
+  // Everything the player is carrying: items, then unused cards. Opened with E.
+  function renderInv() {
+    const ids = sortedCards(S.cards);
+    $menu.innerHTML = `
+      <header><h2>Inventory</h2><button data-a="close">Close (E)</button></header>
+      <h3>Items</h3>
+      <div class="dex">${Object.keys(ITEMS).filter((id) => S.items[id] > 0).map((id) =>
+    `<span title="${ITEMS[id].desc}"><b>${ITEMS[id].name}</b> ×${S.items[id]} <small>${ITEMS[id].desc}</small></span>`).join('') || '<p class="empty">Empty.</p>'}</div>
+      <h3>Unused Power Cards</h3>
+      <div class="cards">${ids.map((id) => cardHTML(id, S.cards[id], '', 'div')).join('') || '<p class="empty">None. Look for sparkles and battle wild Creatamon.</p>'}</div>`;
   }
   function renderHelp() {
     $menu.innerHTML = `
@@ -1130,6 +1195,8 @@
     renderMenu();
   }
 
+  // Free card slots on a draft. Secret cards are bound to their owner and take no slot.
+  const moveRoom = (draft) => CM.MOVE_SLOTS - draft.moves.filter((id) => CARDS[id].tier !== 4).length;
   const forgeLevel = () => (forge.idx == null ? 1 : S.party[forge.idx].level);
   const drawingNow = () => forge.look === 'draw' && !isEgg(forge.draft);
   function paintPreview() {
@@ -1230,10 +1297,11 @@
     const egg = isEgg(draft);
     const preview = { ...draft, level: forgeLevel() };
     const st = CM.stats(preview);
+    const left = (kind) => (kind === 'moves' ? moveRoom(draft) : Infinity);
     const slots = (list, kind) => list.map((id, i) => (CARDS[id].tier === 4
       ? cardHTML(id, 1, 'title="Bound to this Creatamon"', 'div')
       : cardHTML(id, 1, `data-un="${kind}" data-i="${i}" title="Click to remove"`))).join('')
-      + '<div class="slot">no limit,<br>add more below</div>';
+      + (kind !== 'moves' ? '<div class="slot">no limit,<br>add more below</div>' : left(kind) > 0 ? `<div class="slot">${left(kind)} free slot${left(kind) === 1 ? '' : 's'},<br>add below</div>` : '<div class="slot">full</div>');
     const pick = (attr, names, cur, hint) => names.map((n) =>
       `<button class="plain ${n === cur ? 'on' : ''}" data-${attr}="${n}" title="${hint(n)}">${n}</button>`).join('');
     const tools = forge.look === 'upload' ? `
@@ -1256,6 +1324,9 @@
     const ids = sortedCards(avail);
     $menu.innerHTML = `
       <header><h2>The Forge · ${idx == null ? 'new Creatamon' : 'rebuild'}</h2><button data-a="cancel">Cancel</button></header>
+      ${S.party.length ? '' : `<ol class="goal steps"><li><b>Pick an element</b> (Fire, Water, Grass...) and a body shape on the left. The element decides what it is strong against.</li>
+        <li><b>Click each card</b> under "Your Power Cards" to slot it in. Move cards are its attacks; Vitality cards give it more health. Use them all!</li>
+        <li><b>Type a name</b> for it.</li><li>Press the red <b>Create!</b> button.</li></ol>`}
       <div class="forge ${drawingNow() ? 'wide' : ''}">
         <div class="left">
           <canvas id="preview" width="${drawingNow() ? 512 : 160}" height="${drawingNow() ? 512 : 160}" class="${drawingNow() ? 'drawing' : ''}"></canvas>
@@ -1265,12 +1336,12 @@
     (n) => `Strong vs ${CM.STRONG[n].join(', ') || 'nothing in particular'}`)}</div>
           <div class="pick">${pick('shape', Object.keys(SHAPES), draft.shape, (n) => SHAPES[n].hint)}</div>
           <div class="statline"><b>${CM.maxHp(preview)} HP</b> · ATK ${st.atk} · DEF ${st.def} · SPD ${st.spd}<br>${SHAPES[draft.shape].hint}. Same-element moves hit 25% harder.</div>
-          <button class="plain primary" data-a="save" ${draft.moves.length && (idx != null || S.items.creataball) ? '' : 'disabled'}>${idx == null ? 'Create! (uses a Creataball)' : 'Save changes'}</button>
+          <button class="plain primary" data-a="save" ${draft.moves.length && S.items.creataball ? '' : 'disabled'}>${idx == null ? 'Create!' : 'Save changes'} (uses a Creataball)</button>
           ${draft.moves.length ? '' : '<small class="empty">Needs at least one move card.</small>'}
-          ${idx == null && !S.items.creataball ? '<small class="empty">You have no Creataballs. Look for sparkles, win badges, or battle wild Creatamon.</small>' : ''}
+          ${!S.items.creataball ? '<small class="empty">You have no Creataballs. Look for sparkles, win badges, or battle wild Creatamon.</small>' : ''}
         </div>
         <div class="right">
-          <h3>Moves (${draft.moves.length})</h3>
+          <h3>Moves (${draft.moves.filter((id) => CARDS[id].tier !== 4).length}/${CM.MOVE_SLOTS})</h3>
           <div class="cards">${slots(draft.moves, 'moves')}</div>
           <h3>Health (${draft.hpCards.length})</h3>
           <div class="cards">${slots(draft.hpCards, 'hpCards')}</div>
@@ -1310,8 +1381,8 @@
     const artUp = forge.look === 'upload' && !!forge.upload;
     const drawn = forge.look === 'draw' && pix.getContext('2d').getImageData(0, 0, GRID, GRID).data.some((v, i) => i % 4 === 3 && v);
     const art = artUp ? forge.upload : drawn ? pix.toDataURL() : null;
+    S.items.creataball--;
     if (idx == null) {
-      S.items.creataball--;
       S.party.push(Object.assign(CM.create({ ...draft, name, art }), { artUp }));
     } else {
       const c = S.party[idx];
@@ -1330,6 +1401,7 @@
     const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool],[data-w],[data-size],[data-spray]');
     if (!b || b.disabled) return;
     const d = b.dataset;
+    if (inv) return closeMenu();
     if (help) { help = false; return renderMenu(); }
     if (wardrobe) {
       const { draft } = wardrobe;
@@ -1359,6 +1431,7 @@
         const isHp = CARDS[d.add].kind === 'hp';
         const list = isHp ? draft.hpCards : draft.moves;
         if (!isHp && list.includes(d.add)) return;
+        if (!isHp && moveRoom(draft) <= 0) return;
         list.push(d.add);
         avail[d.add]--;
       } else if (d.un) {
@@ -1374,7 +1447,7 @@
     if (d.a === 'evolve') {
       const c = S.party[+d.i], was = CM.maxHp(c);
       CM.evolve(c);
-      alert(`${c.name} evolved into its ${CM.STAGE_NAMES[c.stage].toLowerCase()}!\n\n+${CM.maxHp(c) - was} max HP, and its attacks now deal ${Math.round((CM.STAGE_DMG[c.stage] - 1) * 100)}% extra damage.`);
+      alert(`${c.name} evolved${c.stage === 2 ? ' into its final form' : ''}!\n\n+${CM.maxHp(c) - was} max HP, and its attacks now deal ${Math.round((CM.STAGE_DMG[c.stage] - 1) * 100)}% extra damage.`);
     }
     if (d.a === 'new') return openForge(null);
     if (d.a === 'edit') return openForge(+d.i);
@@ -1499,7 +1572,7 @@
     const k = `${x},${y}`, found = pickupAt(x, y), npc = npcAt(x, y);
     if (P.blocks[k]) return (g, sx, sy) => drawProp(g, P.blocks[k], sx, sy, time);
     if (!npc) return found ? (g, sx, sy) => drawProp(g, 'sparkle', sx, sy, time, found) : null;
-    return npc.kind ? (g, sx, sy) => drawProp(g, npc.kind, sx, sy, time, { taken: S.f.blade })
+    return npc.kind ? (g, sx, sy) => drawProp(g, npc.kind, sx, sy, time, { taken: S.f.blade, el: npc.el, won: !!S.badges[npc.el] })
       : (g, sx, sy) => drawPerson(g, sx, sy, npc.drawn, 'down');
   };
 
@@ -1562,9 +1635,12 @@
     }
     if (mode === 'world') {
       if (k === 'm' || k === 'escape') return openMenu();
+      if (k === 'e') { inv = true; return openMenu(); }
       if (k === 'r') return resetPuzzle();
       if (k === 'g') return spray();
       if (confirmKey && !e.repeat) return interact();
+    } else if (mode === 'menu' && inv && (k === 'escape' || k === 'e')) {
+      return closeMenu();
     } else if (mode === 'menu' && k === 'escape') {
       if (help) { help = false; renderMenu(); }
       else if (wardrobe) { if (wardrobe.isNew) return; wardrobe = null; renderMenu(); }

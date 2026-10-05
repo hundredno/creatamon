@@ -11,6 +11,7 @@ Open `index.html` in a browser. No build step, no dependencies. Progress saves a
 | --- | --- |
 | Arrows / WASD | Move |
 | Enter / Space | Interact, advance text, use a field move on the thing you face |
+| E | Inventory: your items and unused Power Cards |
 | M / Esc | Menu: next objective, badges, party, Forge, Wardrobe, Creatadex |
 | R | Start a gym challenge over |
 | G | Spray your chosen design on the ground ahead |
@@ -37,7 +38,15 @@ There is one gym per element, and each has a challenge to solve before its Leade
 | 10 | Mind | Reverie | Warp pads between doorless rooms |
 | 11 | Normal | Anvilgate | Five gatekeepers' type-chart questions |
 
-Some roads are held by trainers who must be beaten to pass. All eleven badges open the road to Summit City and the Champion Cup.
+Some roads are held by trainers who must be beaten to pass, and the road on from each gym town stays shut until its badge
+is won. All eleven badges open the road to Summit City and the Champion Cup.
+
+**Finding the gyms**: every gym hall has a roof in its element's colour with a white roundel over the door, and a pair of
+banners outside whose beacons pulse until you hold that badge. Once the challenge begins, the bar at the top of the screen
+points to the next gym and counts the steps to its door.
+
+**Level limit**: a Creatamon cannot grow past a level limit that rises with each badge (11 at the start, 68 with all
+eleven), so no Leader can simply be out-levelled. The routes wind back and forth between hedges and ridges; expect a walk.
 
 **Max Mode**: in a gym or a Champion Cup match you can, once per battle, make your Creatamon grow enormous. It gains half
 again its health and its attacks become never-miss Max moves until it faints, is switched out or the battle ends.
@@ -48,8 +57,9 @@ Leaders and Cup opponents do the same with their last Creatamon. (One secret Cre
 
 ## Creataballs, evolution and items
 
-- Forging a **new** Creatamon uses up a **Creataball** (rebuilding one is free). Balls come from sparkles, badges and
+- Forging a **new** Creatamon uses up a **Creataball**, and so does rebuilding one. Balls come from sparkles, badges and
   sometimes wild Creatamon.
+- Every Creatamon of yours that attacks a foe earns **XP** when it faints, not just the one that lands the last hit.
 - At levels 16 and 36 a Creatamon can **evolve** from the menu. Each stage builds in free health and makes all its
   attacks hit harder.
 - Each Creatamon can **hold one item**: Punching Gloves (more damage), Guard Shield (30% chance to nullify a hit),
@@ -65,7 +75,7 @@ clothes any time. Extra clothes are hidden among the sparkles and won from train
 
 ## Power Cards
 
-Every Creatamon is built from cards: as many move and health cards as you like, plus a free choice of element and body.
+Every Creatamon is built from cards: up to six move cards and as many health cards as you like, plus a free choice of element and body.
 You can keep the generated look, pick **Draw my own** in the Forge and paint a 32x32 sprite (with brush sizes, mirror, undo, a colour picker
 and a button to start from the generated look), or pick **Upload image**
 to use any picture from your device (it is shrunk to 128px and kept in your save).
@@ -77,7 +87,7 @@ to use any picture from your device (it is shrunk to 128px and kept in your save
 | ★★★ Epic | Tsunami Blast, Hyper Burst, Titan Heart (+250 HP) |
 
 Cards come from sparkles, trainers, Gym Leaders, and drops from wild Creatamon (later routes drop better tiers).
-Rebuilding a Creatamon at the Forge is free, and dismantling one returns its cards.
+Rebuilding a Creatamon at the Forge costs a Creataball, and dismantling one returns its cards.
 
 ## Wild Creatamon
 
