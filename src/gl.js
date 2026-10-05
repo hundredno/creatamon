@@ -3,6 +3,9 @@
 // buildings have pitched roofs, trees are low-poly rounded canopies, and people stand upright with real depth.
 // Sunlight warms the lit faces and cools the shaded ones, everything tall casts a soft shadow, and the
 // distance fades into haze. Props are upright cards. No libraries.
+import { CM } from './world.js';
+import { GFX } from './draw.js';
+
 const GL3D = (() => {
   const { drawTile, drawUp, tileHash, shade } = GFX;
   const RES = 3;                    // texture pixels per unit: a third of a unit is the finest detail
@@ -345,3 +348,4 @@ const GL3D = (() => {
 
   return { create };
 })();
+export { GL3D };

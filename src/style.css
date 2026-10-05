@@ -360,3 +360,8 @@ button { color: inherit; }
 .sprite.shiny { filter: hue-rotate(150deg) saturate(1.5) brightness(1.1) drop-shadow(0 0 10px #fff8b0); }
 .sprite.shiny.alpha { filter: hue-rotate(150deg) saturate(1.5) drop-shadow(0 0 8px #e8384f) drop-shadow(0 0 20px #fff8b0); }
 #toast { top: 66px; }
+/* ---- Version label: in the free top right corner; on touch screens the minimap is there, so it sits just below it ---- */
+/* will-change gives it a compositing layer of its own: drawn into the touch controls' layer instead, it nudged the
+   shading of the D-pad's shadows. */
+#ver { will-change: transform; position: absolute; top: 4px; right: 8px; z-index: 55; padding: 0 7px; border-radius: 999px; background: #1d243799; color: #fffc; font-size: 10px; line-height: 15px; pointer-events: none; user-select: none; -webkit-user-select: none; }
+#game.touch #ver { top: 110px; right: 12px; }

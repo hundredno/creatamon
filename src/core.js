@@ -517,4 +517,4 @@ const CM = (() => {
     useMove, pickMove, spawn, genWild, rollDrop,
   };
 })();
-if (typeof module !== 'undefined') module.exports = CM;
+export { CM };

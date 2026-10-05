@@ -218,3 +218,4 @@ const SFX = (() => {
 
   return { play, music, set, opts };
 })();
+export { SFX };

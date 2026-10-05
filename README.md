@@ -8,7 +8,10 @@ Find **Power Cards**, slot them into a Creatamon at the Forge, earn fourteen gym
 
 ```bash
 npm install
-npm run dev
+npm run dev        # play at the address it prints, with live reload
+npm test           # rules, puzzles and story checks
+npm run build      # production build into dist/
+npm run preview    # serve dist/ locally
 ```
 
 ## Initial setup
@@ -21,13 +24,23 @@ claude --dangerously-skip-permissions
 ## Deploy
 
 ```bash
-npx wrangler login
+npx wrangler login   # once
 npm run deploy
 ```
 
+The game is a static site, served by Cloudflare as a Worker with static assets only (`wrangler.jsonc`, no Worker script).
+`npm run deploy` builds into `dist/` and uploads it to `creatamon.<your account>.workers.dev`. Preview URLs are off
+(`preview_urls: false`), so only the deployed version is reachable. `public/_headers` lets browsers cache the hashed files
+in `dist/assets/` forever; `index.html` is revalidated on each visit, so a new deploy shows up straight away.
+
+The top right corner of the game (just under the minimap on touch screens) shows the version: `v.` and the first 4
+characters of the commit it was built from, for example `v.6785`. A trailing `+` (`v.6785+`) means the build had
+uncommitted changes, untracked files included.
+
 ## Play
 
-Open `index.html` in a browser. No build step, no dependencies. Progress saves automatically in the browser.
+Run `npm run dev` and open the address it prints, or play the deployed site. Opening `index.html` straight from disk no
+longer works, because browsers do not load JavaScript modules from `file://`. Progress saves automatically in the browser.
 
 | Key | Action |
 | --- | --- |
@@ -189,12 +202,19 @@ The menu's Creatadex tracks every species you have met.
 
 ## Development
 
-- `js/core.js` holds cards, species and battle rules, with no DOM
-- `js/world.js` holds the map, gym interiors, puzzle rules, people and teams, with no DOM
-- `js/draw.js` draws tiles, people, creatures and attack animations
-- `js/gl.js` renders the overworld in 3D with WebGL: the tile art laid flat and filtered smooth, walls and buildings raised
+The game is plain JavaScript modules in `src/`, bundled by Vite. `index.html` loads `src/game.js`, which imports the rest.
+
+- `src/sfx.js` makes the sound effects and music with the Web Audio API
+- `src/core.js` holds cards, species and battle rules, with no DOM
+- `src/world.js` holds the map, gym interiors, puzzle rules, people and teams, with no DOM
+- `src/draw.js` draws tiles, people, creatures and attack animations
+- `src/gl.js` renders the overworld in 3D with WebGL: the tile art laid flat and filtered smooth, walls and buildings raised
   as blocks with pitched roofs, low-poly rounded trees, people standing upright with depth, warm and cool sunlight,
   soft cast shadows and distance haze. Without WebGL the game falls back to the flat view
-- `js/game.js` holds the overworld, story, battles, menu, wardrobe and Forge
-- `node test/core.test.js` checks the rules, solves every gym puzzle by search, and walks the story from start
+- `src/game.js` holds the overworld, story, battles, menu, wardrobe and Forge
+- `src/style.css` styles everything
+- `public/` is copied into the build as is. The secret Creatamon uses `img/modulo-yuji.png` (and `img/sukuna.png` in
+  Max Mode) when those files exist, so drop them into `public/img/` to use them; otherwise it is drawn
+- `vite.config.js` works out the version label; `wrangler.jsonc` and `public/_headers` set up the Cloudflare deploy
+- `npm test` (`node test/core.test.js`) checks the rules, solves every gym puzzle by search, and walks the story from start
   to Champion to prove every step is reachable in order

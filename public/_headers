@@ -1,0 +1,4 @@
+# Cloudflare static asset headers. Built files carry a content hash in their name, so they can be cached forever;
+# index.html keeps the default revalidation, so a new deploy shows up on the next visit.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

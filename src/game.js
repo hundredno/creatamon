@@ -1,4 +1,10 @@
 // Creatamon UI: overworld, gym puzzles, story, battles, menu, wardrobe and the Forge.
+// The imports run in the order the classic <script> tags used to: sfx, core, world, draw, gl, then this file.
+import { SFX } from './sfx.js';
+import { CM } from './world.js';
+import { GFX } from './draw.js';
+import { GL3D } from './gl.js';
+
 (() => {
   const { CARDS, ELEMENTS, SHAPES, CLOTHES, MAPS, NPCS, CHESTS, TEAMS } = CM;
   const { drawTile, drawPerson, drawProp, drawCreature, drawSpray, playFx, SPRAYS } = GFX;

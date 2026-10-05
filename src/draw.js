@@ -1,5 +1,7 @@
 // Creatamon drawing: tiles, people, props, creatures and battle effects.
 // The overworld is drawn in 32-unit tiles on a canvas at twice that resolution, so detail goes down to half a unit.
+import { CM } from './world.js';
+
 const GFX = (() => {
   const { ELEMENTS } = CM;
   const shade = (hex, f) => `#${[1, 3, 5].map((i) =>
@@ -955,3 +957,4 @@ const GFX = (() => {
 
   return { shadows, drawTile, drawUp, drawPerson, drawProp, drawCreature, drawSpray, playFx, shade, tileHash, UPRIGHT, SPRAYS };
 })();
+export { GFX };
