@@ -3,6 +3,28 @@
 A creature-battling RPG where you don't catch your team, you **create** it.
 Find **Power Cards**, slot them into a Creatamon at the Forge, earn fourteen gym badges and take the Champion Cup.
 
+
+## Setup and run
+
+```bash
+npm install
+npm run dev
+```
+
+## Initial setup
+
+```bash
+npm create vite@latest . -- --template vanilla
+claude --dangerously-skip-permissions
+```
+
+## Deploy
+
+```bash
+npx wrangler login
+npm run deploy
+```
+
 ## Play
 
 Open `index.html` in a browser. No build step, no dependencies. Progress saves automatically in the browser.
