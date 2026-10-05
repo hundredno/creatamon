@@ -1127,7 +1127,7 @@
     ['Menu', 'Press M or Esc. Your next goal is at the top; your party, Forge, Bag, Wardrobe and sprays are below it.'],
     ['Forge', 'Creatamon are built, not caught. Each holds up to six move cards and as many health cards as you like. Forging a new Creatamon costs a Creataball, and so does rebuilding one.'],
     ['Battle', 'Pick a move. Matching a move to your Creatamon\'s element hits harder, and so does hitting a weakness. Bag uses a potion; Switch swaps Creatamon.'],
-    ['Grow', 'Every Creatamon of yours that attacked a foe earns XP when it faints, up to a level limit that rises with each badge. At levels 16 and 36 a Creatamon can Evolve from the menu for free health and stronger attacks. Give each one an item to hold.'],
+    ['Grow', 'Every Creatamon of yours that attacked a foe earns XP when it faints (and any party member under level 10 earns it too, without fighting), up to a level limit that rises with each badge. At levels 16 and 36 a Creatamon can Evolve from the menu for free health and stronger attacks. Give each one an item to hold.'],
     ['Pick-ups', 'Sparkles on the ground are cards, items, clothes and spray designs. Walk over them.'],
     ['Heal', 'Step on a pink heal pad to restore your whole party. If everyone faints you return to the last pad you used.'],
     ['Gyms', 'Each town\'s gym has a puzzle before its Leader. Press R to start a puzzle over. In gyms you can use Max Mode once per battle.'],
@@ -1342,6 +1342,7 @@
     return c.hp - before;
   }
 
+  const TRAINEE = 10;   // below this level a party member earns XP from every battle
   async function grantXp(me, foe, bonus) {
     const xp = Math.round(CM.xpYield(foe) * (bonus ? 1.5 : 1));
     const from = me.level, cap = CM.levelCap(badgeCount()), badges = badgeCount();
@@ -1351,14 +1352,16 @@
       return tip('cap', `${me.name} is at level ${from}. With ${badges} badge${badges === 1 ? '' : 's'} a Creatamon cannot grow past level ${cap}. The next badge lifts the limit.`);
     }
     await say(`${me.name} gained ${xp} XP!`);
+    const down = me.hp <= 0;
     const levelled = CM.gainXp(me, xp, cap);
+    if (down) me.hp = 0;   // growing does not wake a fainted Creatamon
     updateBars();
     if (levelled) {
       if (me === B.me) renderBattle();
       SFX.play('level');
       for (let l = from + 1; l <= me.level; l++) await say(`${me.name} grew to level ${l}!`);
       await tip('level', ['Level up! XP comes from beating other Creatamon. Every level makes a Creatamon stronger, faster and tougher.',
-        'Every Creatamon of yours that attacked the foe gets the XP, so swapping one in for a hit helps it grow too.']);
+        'Every Creatamon of yours that attacked the foe gets the XP. Until they reach level 10, the rest of your party gets it too, even without fighting.']);
       if (CM.canEvolve(me)) await say(`${me.name} is ready to evolve! Open the menu (M) after the battle.`);
     }
   }
@@ -1415,7 +1418,8 @@
         await say(`${foeTag}${shownName(B.foe)} fainted!`);
         endMax(B.foe);
         // Everyone still standing who attacked this foe earns the XP, starting with whoever is out now.
-        const earners = S.party.filter((c) => c.hp > 0 && B.hit.has(c)).sort((a, b) => (b === B.me) - (a === B.me));
+        // Beginners get a hand: anyone in the party still under level 10 shares in it too, whether or not they fought.
+        const earners = S.party.filter((c) => (c.hp > 0 && B.hit.has(c)) || c.level < TRAINEE).sort((a, b) => (b === B.me) - (a === B.me));
         for (const c of earners.length ? earners : [B.me]) await grantXp(c, B.foe, !!opts.trainer || !!opts.alpha);
         B.hit.clear();
         const next = foes.find((f) => f.hp > 0);

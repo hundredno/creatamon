@@ -128,6 +128,7 @@ map; teleport to any town.
 - Forging a **new** Creatamon uses up a **Creataball**, and so does rebuilding one. Balls come from sparkles, badges and
   sometimes wild Creatamon.
 - Every Creatamon of yours that attacks a foe earns **XP** when it faints, not just the one that lands the last hit.
+  Party members still under level 10 earn it as well, even if they never came out.
 - At levels 16 and 36 a Creatamon can **evolve** from the menu. Each stage builds in free health and makes all its
   attacks hit harder.
 - Each Creatamon can **hold one item**: Punching Gloves (more damage), Guard Shield (30% chance to nullify a hit),
