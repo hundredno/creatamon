@@ -4,7 +4,7 @@ const GFX = (() => {
   const { ELEMENTS } = CM;
   const shade = (hex, f) => `#${[1, 3, 5].map((i) =>
     Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) * f)).toString(16).padStart(2, '0')).join('')}`;
-  const TINTS = { Plant: '#7d8496', League: '#e0483c' };
+  const TINTS = { Plant: '#7d8496', League: '#e0483c', Stop: '#e8384f' };
   const tintOf = (name) => TINTS[name] || ELEMENTS[name].color;
 
   // ---------- Tiles ----------
@@ -247,6 +247,13 @@ const GFX = (() => {
         wall('#efe6d2', '#fbf6ea', '#d6cab0');
         R('#9a8f78', 0, 30, 32, 2);
         if (tint) { R(tintOf(tint), 0, 0, 32, 3); R(shade(tintOf(tint), 0.7), 0, 3, 32, 0.5); }
+        if (tint === 'Stop') {
+          // A shop front: a striped awning over a display window full of goods.
+          for (let i = 0; i < 8; i++) R(i % 2 ? '#f4f4f4' : '#e8384f', i * 4, 3, 4, 6);
+          R('#b82a3c', 0, 8.5, 32, 1); R('#5a4632', 5, 12, 22, 14); R('#bfe3fb', 6, 13, 20, 12); R('#e6f4fd', 6.5, 13.5, 6, 3);
+          R('#f08aa0', 8, 19, 4, 6); R('#fff', 9, 18, 2, 1.5); R('#e0483c', 14, 20, 5, 5); R('#f4f4f4', 14, 22, 5, 1); R('#ffd24a', 21, 19.5, 4, 5.5);
+          break;
+        }
         if ((x + y) % 2 === 0) {
           R('#5a4632', 9, 9, 14, 14); R('#9fd4f2', 10, 10, 12, 12); R('#d3ecfb', 10.5, 10.5, 4, 3); R('#5a4632', 15.5, 10, 1, 12); R('#5a4632', 10, 15.5, 12, 1);
           R('#c9705a', 8, 23, 16, 1.5);
@@ -257,6 +264,7 @@ const GFX = (() => {
         const tint = CM.TINT[k], c = tint ? tintOf(tint) : '#5a8a4a';
         if (id === 'world' && !tint) { ground('.'); R('#6b4a2b', 0, 4, 3, 28); R('#6b4a2b', 29, 4, 3, 28); R('#3a2a1a', 3, 6, 26, 26); R('#54402a', 3, 6, 26, 2); R('#8a6a3b', 4, 9, 0.5, 23); R('#8a6a3b', 27.5, 9, 0.5, 23); break; }
         wall('#efe6d2', '#fbf6ea', '#d6cab0'); R(c, 0, 0, 32, 3);
+        if (tint === 'Stop') { for (let i = 0; i < 8; i++) R(i % 2 ? '#f4f4f4' : '#e8384f', i * 4, 3, 4, 3); R('#ffd24a', 11, 0.3, 10, 2.4); }
         R('#3a2a1a', 6, 6, 20, 26); R('#6b4a2b', 7.5, 7.5, 8, 24.5); R('#6b4a2b', 16.5, 7.5, 8, 24.5);
         R('#84603c', 8, 8, 1, 23); R('#84603c', 17, 8, 1, 23); R('#f1c93a', 14, 19, 1.5, 1.5); R('#f1c93a', 17, 19, 1.5, 1.5);
         R(c, 9, 10, 5, 5); R(c, 18, 10, 5, 5); R(shade(c, 1.3), 9.5, 10.5, 2, 1);

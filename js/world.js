@@ -346,7 +346,7 @@
     '###;;;.;;;###',
     '######E######',
     '#############',
-  ], { fog: true, area: { name: 'Drowsing Grove', lv: [3, 5], drops: [90, 10, 0] } });
+  ], { fog: true, area: { name: 'Drowsing Grove', lv: [2, 4], drops: [90, 10, 0], wild: 'grove' } });
 
   interior('plant', 'Anvilgate Energy Plant', [
     'IIIIIIIII',
@@ -696,6 +696,28 @@
       look: { skin: '#a86b3c', hair: '#1c1c28', hat: 'cap', hatColor: '#f47a45', top: 'hoodie', topColor: '#1f5f9e', bottom: 'shorts', bottomColor: '#2c2c3c' },
       pre: 'Only the Champion has ever beaten me. No tricks, no weakness to lean on. Just strength!', post: 'Ha! Finally someone worth losing to. The last badge is yours. Go and claim the Cup.' },
   ];
+  // Gyms get harder the further along they are. From the third on, the Leader's gym trainers must be beaten first, one
+  // after another with no rest (more of them at later gyms). Leaders bring bigger teams, tougher Creatamon that hold
+  // items, and choose their moves more shrewdly.
+  GYMS.forEach((gm, n) => {
+    const own = Object.values(CM.SPECIES).filter((sp) => sp.element === gm.el).map((sp) => sp.name);
+    const low = Math.min(...gm.team.map((t) => t[1])), high = Math.max(...gm.team.map((t) => t[1]));
+    for (let extra = n >= 11 ? 2 : n >= 7 ? 1 : 0; extra > 0 && gm.team.length < 6; extra--) {
+      gm.team.splice(gm.team.length - 1, 0, [own.find((name) => !gm.team.some((t) => t[0] === name)) || gm.team[0][0], high - 1]);
+    }
+    gm.skill = Math.min(0.97, 0.6 + n * 0.03);
+    // Health cards and held items handed to the Leader's team as it is sent out.
+    gm.bulk = [...Array(Math.floor(n / 3)).fill('hp100'), ...(n >= 8 ? ['hp250'] : []), ...(n >= 12 ? ['hp250'] : [])];
+    gm.items = n >= 9 ? ['gloves', 'shield'] : n >= 4 ? ['leaf'] : [];
+    gm.trainers = Array.from({ length: n < 2 ? 0 : n < 5 ? 1 : n < 9 ? 2 : 3 }, (_, i) => [[own[i % own.length], low - 2], [own[(i + 1) % own.length], low - 1]]);
+  });
+  // Dresses a Leader's team for battle: the last one out holds the best item.
+  const gymTeam = (gm) => makeTeam(gm.name, gm.team).map((c, i, all) => {
+    c.hpCards.push(...gm.bulk);
+    c.item = i === all.length - 1 ? gm.items[gm.items.length - 1] || null : gm.items[0] || null;
+    c.hp = CM.maxHp(c);
+    return c;
+  });
   GYMS.forEach((gm) => {
     const map = `gym_${gm.el}`, [x, y] = MAPS[map].leader;
     MAPS[map].el = gm.el;
@@ -849,18 +871,40 @@
     [['Toxitoad', 53], ['Miasmander', 53]], 'One wrong step in Mirefen and you sink. Prove you can keep your feet!', 'Sure-footed. The town is just ahead.');
 
   // ---------- Creatastops ----------
-  // A shop stall in every town past the first. Each sells the basics, cards of its own element, and its share of the clothes.
-  const STOPS = [];
+  // A little red-roofed shop in every town past the first. Each sells the basics, cards of its own element, and its
+  // share of the clothes. The shop is three tiles wide and three deep, with its door in the middle of the south wall;
+  // it is built on the nearest clear plot to the spot given, leaving the tile in front of the door open.
+  const STOPS = [], STOP_AT = {};
   const wares = Object.keys(CM.CLOTHES).filter((id) => CM.CLOTHES[id].sold);
+  const taken = (x, y) => NPCS.some((n) => n.map === 'world' && n.x === x && n.y === y) || CHESTS.some((c) => c.map === 'world' && c.x === x && c.y === y);
+  const plot = (dx, dy) => {
+    // The building itself, plus the row in front of it, must be bare ground that nobody and nothing is using.
+    for (let y = dy - 2; y <= dy + 1; y++) for (let x = dx - 1; x <= dx + 1; x++) if (!'c.Ss'.includes(charAt('world', x, y)) || taken(x, y)) return false;
+    // Keep a clear walkway all the way round, so a shop never plugs a street.
+    for (let y = dy - 3; y <= dy + 1; y++) for (const x of [dx - 2, dx + 2]) if (SOLID.includes(charAt('world', x, y)) || taken(x, y)) return false;
+    for (let x = dx - 2; x <= dx + 2; x++) if (SOLID.includes(charAt('world', x, dy - 3)) || taken(x, dy - 3)) return false;
+    return true;
+  };
+  const build = (x, y, ch) => { const rows = MAPS.world.rows; rows[y] = rows[y].slice(0, x) + ch + rows[y].slice(x + 1); TINT[`${x},${y}`] = 'Stop'; };
   [[58, 92, 'Normal'], [35, 52, 'Fire'], [20, 28, 'Grass'], [16, 10, 'Water'], [16, 76, 'Wind'], [64, 46, 'Normal'], [88, 35, 'Rock'], [94, 70, 'Electric'],
-    [51, 16, 'Metal'], [68, 16, 'Ice'], [95, 16, 'Shadow'], [118, 16, 'Mind'], [120, 42, 'Robot'], [120, 66, 'Light'], [106, 87, 'Toxic'], [72, 88, 'Normal']].forEach(([x, y, el], i, all) => {
-    const stop = { id: `stop${i}`, el, clothes: wares.filter((_, k) => k % all.length === i) };
+    [51, 16, 'Metal'], [68, 16, 'Ice'], [95, 16, 'Shadow'], [118, 16, 'Mind'], [120, 42, 'Robot'], [120, 66, 'Light'], [106, 87, 'Toxic'], [72, 88, 'Normal']].forEach(([hx, hy, el], i, all) => {
+    const town = areaAt('world', hx, hy).name;
+    let door = null;
+    for (let r = 0; r < 9 && !door; r++) {
+      for (let dy = hy - r; dy <= hy + r && !door; dy++) for (let dx = hx - r; dx <= hx + r && !door; dx++) {
+        if (Math.max(Math.abs(dx - hx), Math.abs(dy - hy)) === r && areaAt('world', dx, dy).name === town && plot(dx, dy)) door = [dx, dy];
+      }
+    }
+    if (!door) throw new Error(`no room for a Creatastop in ${town}`);
+    const [dx, dy] = door;
+    for (let x = dx - 1; x <= dx + 1; x++) { build(x, dy - 2, 'G'); build(x, dy - 1, 'G'); build(x, dy, x === dx ? 'D' : 'W'); }
+    const stop = { id: `stop${i}`, el, town, door, clothes: wares.filter((_, k) => k % all.length === i) };
     STOPS.push(stop);
-    person(stop.id, 'world', x, y, 'Creatastop', null, { kind: 'stop', stop });
+    STOP_AT[`${dx},${dy}`] = stop;
   });
 
   Object.assign(CM, {
-    STOPS, MAPS, WARPS, TINT, AREAS, CHESTS, NPCS, GYMS, TEAMS, LOOKS, START, DIRS, GATE, GYM_ORDER, NICKS, makeTeam, gymDoor,
+    STOPS, STOP_AT, MAPS, WARPS, TINT, AREAS, CHESTS, NPCS, GYMS, TEAMS, LOOKS, START, DIRS, GATE, GYM_ORDER, NICKS, makeTeam, gymTeam, gymDoor,
     badgeCount, charAt, gateOpen, passable, groundAt, areaAt, initPuzzle, checkSolved, step, arrive, toggleFire, teleAt, GUSTS,
   });
 })(typeof module !== 'undefined' ? require('./core.js') : CM);

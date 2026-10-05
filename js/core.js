@@ -257,13 +257,14 @@ const CM = (() => {
     return { dmg, eff, crit };
   };
   // The move (object) a computer-run Creatamon uses.
-  const pickMove = (foe, target, rng = Math.random) => {
+  // skill: how often it picks its best move rather than a random one.
+  const pickMove = (foe, target, rng = Math.random, skill = 0.6) => {
     const moves = battleMoves(foe);
     const heals = moves.filter((m) => m.heal);
     const attacks = moves.filter((m) => !m.heal);
     if (heals.length && foe.hp < maxHp(foe) * 0.35 && rng() < 0.5) return heals[0];
     const pool = attacks.length ? attacks : moves;
-    if (rng() < 0.6) {
+    if (rng() < skill) {
       const score = (m) => {
         return m.power * m.acc * effectiveness(m.element, target.element) * (m.element === foe.element ? 1.25 : 1);
       };
@@ -429,21 +430,37 @@ const CM = (() => {
     4: [['Buzzlebee', 4], ['Petalwing', 4], ['Ladybop', 4], ['Nectarslug', 4], ['Gustail', 4], ['Honeycub', 2], ['Dewsnake', 2], ['Mesmoth', 2], ['Bloomoth', 1]],
     5: [['Crystalisk', 4], ['Frostmaw', 4], ['Voidling', 4], ['Shardwing', 4], ['Prismite', 2], ['Glacierback', 1], ['Umbrawyrm', 1]],
     6: [['Puddlit', 4], ['Dewsnake', 4], ['Gullwave', 4], ['Tidewyrm', 2], ['Rivermaw', 1]],
+    // The Drowsing Grove comes right at the start of the game, so only gentle Creatamon live there.
+    grove: [['Fluffin', 4], ['Chirple', 4], ['Sproutle', 4], ['Puddlit', 4], ['Breezlet', 2], ['Dreamote', 2]],
     // The far east has its own wildlife, whatever the ground.
     east1: [['Gearling', 4], ['Dronefly', 4], ['Boltnut', 4], ['Servopup', 2], ['Ironclaw', 2], ['Mechadon', 1]],
     east2: [['Glimmerbug', 4], ['Sunpup', 4], ['Petalwing', 4], ['Halowing', 2], ['Zapwing', 2], ['Solarion', 1]],
     east3: [['Sludgel', 4], ['Venomite', 4], ['Gloomoth', 4], ['Toxitoad', 2], ['Dewsnake', 2], ['Miasmander', 1]],
     7: [['Snowpuff', 4], ['Frostfinch', 4], ['Glimmershell', 4], ['Crystalisk', 2], ['Frostmaw', 2], ['Stormkite', 2], ['Oraclynx', 1], ['Glacierback', 1]],
   };
-  // ---- Alpha rank ----
-  // Beating alpha Creatamon earns rank. Each title needs this many alpha wins; Champion comes only from beating the Champion.
-  const ALPHA_TITLES = ['Alpha I', 'Alpha II', 'Alpha III', 'King I', 'King II', 'King III', 'Emperor I', 'Emperor II', 'Emperor III',
-    'Conqueror I', 'Conqueror II', 'Conqueror III'];
-  const ALPHA_NEED = [1, 2, 3, 4, 6, 8, 10, 12, 15, 18, 21, 24];
+  // ---- Champion rank ----
+  // Beating alpha Creatamon earns Champion rank. Seven tiers of three steps each, and every tier costs more wins per
+  // step than the one before. Beating the Champion makes you Champion I, and from there every few alpha wins adds
+  // another numeral, without end.
+  const RANK_TIERS = ['Alpha', 'King', 'Emperor', 'Conqueror', 'Warlord', 'Legend', 'Mythic'];
+  const roman = (n) => [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]
+    .reduce((out, [v, r]) => { while (n >= v) { out += r; n -= v; } return out; }, '');
+  const ALPHA_TITLES = RANK_TIERS.flatMap((t) => [1, 2, 3].map((n) => `${t} ${roman(n)}`));
+  // Wins needed for each title: 2 a step in the first tier, 3 in the second, and so on up.
+  const ALPHA_NEED = ALPHA_TITLES.reduce((need, _, i) => [...need, (need[i - 1] || 0) + 2 + Math.floor(i / 3)], []);
   const alphaRank = (wins) => ALPHA_NEED.filter((n) => (wins || 0) >= n).length;
-  const title = (wins, champion) => (champion ? 'Champion' : ALPHA_TITLES[alphaRank(wins) - 1] || '');
-  // The rank the Champion demands of a challenger (an index into ALPHA_TITLES, plus one).
-  const CUP_RANK = 7;
+  const CHAMPION_STEP = 5;
+  // champAt: how many alpha wins the player had on becoming Champion.
+  const championLevel = (wins, champAt) => 1 + Math.floor(Math.max(0, (wins || 0) - (champAt || 0)) / CHAMPION_STEP);
+  const title = (wins, champion, champAt) => (champion ? `Champion ${roman(championLevel(wins, champAt))}` : ALPHA_TITLES[alphaRank(wins) - 1] || '');
+  // The next title up and how many more alpha wins it takes; null once the pre-Champion ladder is finished.
+  const nextRank = (wins, champion, champAt) => {
+    if (champion) { const lv = championLevel(wins, champAt); return { name: `Champion ${roman(lv + 1)}`, left: (champAt || 0) + lv * CHAMPION_STEP - (wins || 0) }; }
+    const r = alphaRank(wins);
+    return r < ALPHA_TITLES.length ? { name: ALPHA_TITLES[r], left: ALPHA_NEED[r] - (wins || 0) } : null;
+  };
+  // The rank the Champion demands of a challenger (an index into ALPHA_TITLES, plus one): King I.
+  const CUP_RANK = 4;
   // ---- Money ----
   // Beating a trainer pays out by their strongest Creatamon; Leaders pay triple.
   const prize = (team, big) => Math.max(...team.map((t) => t[1])) * 14 * (big ? 3 : 1);
@@ -496,7 +513,7 @@ const CM = (() => {
     ELEMENTS, STRONG, SHAPES, CARDS, TIER_NAMES, EGG, MAX_PARTY, CLOTHES, SPECIES, DEX, WILD, ZONE_OF,
     STARTER_CARDS, ENCOUNTER_RATE,
     isEgg, setMax, battleMoves, DOMAIN_STRIKE, ITEMS, held, EVOLVE_AT, STAGE_NAMES, STAGE_DMG, STAGE_HP, canEvolve, evolve,
-    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp, levelCap, MOVE_SLOTS, ALPHA_TITLES, ALPHA_NEED, alphaRank, title, CUP_RANK, prize, cardPrice, cardNeed, CLOTHES_PRICE,
+    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp, levelCap, MOVE_SLOTS, ALPHA_TITLES, ALPHA_NEED, alphaRank, title, nextRank, roman, CUP_RANK, prize, cardPrice, cardNeed, CLOTHES_PRICE,
     useMove, pickMove, spawn, genWild, rollDrop,
   };
 })();

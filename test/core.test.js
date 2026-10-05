@@ -251,6 +251,22 @@ stages.forEach(([id, done, before], i) => {
   later.slice(0, 1).forEach((n) => assert.ok(!can(n), `stage ${i}: ${n} reachable too early`));
   done();
 });
+// Champion rank: every title costs more than the last, and Champions count up in Roman numerals without end.
+assert.ok(CM.ALPHA_NEED.every((n, i) => i === 0 || n > CM.ALPHA_NEED[i - 1]) && CM.ALPHA_TITLES.length === CM.ALPHA_NEED.length);
+assert.strictEqual(CM.title(0), '');
+assert.strictEqual(CM.title(CM.ALPHA_NEED[0]), 'Alpha I');
+assert.strictEqual(CM.title(7, true, 7), 'Champion I');
+assert.strictEqual(CM.title(7 + 5 * 13, true, 7), 'Champion XIV');
+assert.strictEqual(CM.nextRank(8, true, 7).left, 4);
+assert.ok(CM.CUP_RANK <= CM.ALPHA_TITLES.length);
+// Gyms get harder as they go: never fewer trainers, never a duller Leader, never less bulk.
+GYMS.forEach((g, i) => {
+  if (!i) return;
+  const p = GYMS[i - 1];
+  assert.ok(g.trainers.length >= p.trainers.length && g.skill >= p.skill && g.bulk.length >= p.bulk.length, `${g.el} gym is easier than ${p.el}`);
+  g.trainers.flat().forEach(([name, level]) => assert.ok(SPECIES[name] && level > 0));
+  assert.ok(CM.gymTeam(g).every((c) => c.hp === CM.maxHp(c)) && g.team.length <= CM.MAX_PARTY);
+});
 // Nobody gets ahead of a gym: the road on from each town stays shut until its badge is won.
 {
   const early = { ...newS(), beaten: { b1: true }, f: { start: true, rival1: true, grove: true, endorsed: true, ceremony: true, cyril1: true }, smashed: all };
@@ -275,12 +291,14 @@ CHESTS.forEach((c) => {
 NPCS.filter((n) => n.team).forEach((n) => assert.ok(touch(end, n.map, n.x, n.y), `${n.name} unreachable`));
 // Every wild habitat appears somewhere with a level range.
 // Named wild lists belong to an area with levels, and name only real species.
-Object.keys(CM.WILD).filter((z) => !+z).forEach((z) => assert.ok(CM.AREAS.some((a) => a.wild === z && a.lv), `nowhere uses the wild list ${z}`));
+Object.keys(CM.WILD).filter((z) => !+z).forEach((z) => assert.ok([...CM.AREAS, ...Object.values(MAPS).map((m) => m.area || {})].some((a) => a.wild === z && a.lv), `nowhere uses the wild list ${z}`));
+// Nothing in the opening Grove hits harder than a starter move.
+CM.WILD.grove.forEach(([name]) => SPECIES[name].moves.forEach((id) => assert.ok(CARDS[id].tier === 1, `${name} is too rough for the Grove`)));
 CM.AREAS.filter((a) => a.wild).forEach((a) => assert.ok(CM.WILD[a.wild], `${a.name}: unknown wild list`));
 // Every Creatastop can be walked up to, and sells clothes that exist.
 CM.STOPS.forEach((st) => {
-  const n = NPCS.find((p) => p.id === st.id);
-  assert.ok(touch(end, n.map, n.x, n.y), `${st.id} unreachable`);
+  assert.ok(end.has(`world:${st.door[0]},${st.door[1] + 1}`), `${st.town}: the Creatastop door cannot be reached`);
+  assert.strictEqual(CM.charAt('world', ...st.door), 'D');
   st.clothes.forEach((id) => assert.ok(CM.CLOTHES[id].sold));
 });
 assert.strictEqual(CM.STOPS.flatMap((st) => st.clothes).length, Object.values(CM.CLOTHES).filter((c) => c.sold).length, 'every sold piece is stocked somewhere');

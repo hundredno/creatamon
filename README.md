@@ -18,6 +18,11 @@ Open `index.html` in a browser. No build step, no dependencies. Progress saves a
 | G | Spray your chosen design on the ground ahead |
 | 1-9 | Pick a battle option |
 
+On a phone or tablet a direction pad and A / menu / bag / bike buttons appear on screen; everything else is tapped directly.
+
+Sound effects and music are generated in the browser (no audio files). The menu's **Options** tile turns either off, and
+also controls whether battle messages move on by themselves.
+
 ## The journey
 
 You and your rival Finn are endorsed by the Champion for the Gym Challenge of the Galdra region.
@@ -42,7 +47,8 @@ There is one gym per element, and each has a challenge to solve before its Leade
 | 13 | Toxic | Mirefen | Push boulders into three sludge pits |
 | 14 | Normal | Anvilgate | Five gatekeepers' type-chart questions |
 
-Some roads are held by trainers who must be beaten to pass, and the road on from each gym town stays shut until its badge
+Trainers on the routes watch the road: step right beside one, or up to three tiles in front of them, and they challenge
+you. Some roads are held by trainers who must be beaten to pass, and the road on from each gym town stays shut until its badge
 is won. All fourteen badges open the road to Summit City and the Champion Cup.
 
 **Finding the gyms**: every gym hall has a roof in its element's colour with a white roundel over the door, and a pair of
@@ -60,7 +66,7 @@ Leaders and Cup opponents do the same with their last Creatamon. (One secret Cre
 After the Ice gym Wren fits it with floats, and from then on it rides straight onto rivers, lakes and the sea.
 
 **Field moves** work outside battle. Face the obstacle and press Enter, and a Creatamon that knows the move is summoned:
-*Rock Smash* breaks cracked rocks, *Surf* carries you across rivers, lakes and the sea.
+*Rock Smash* breaks cracked rocks, *Surf* carries you across rivers, lakes and the sea. Holding the card is enough: it does not have to be slotted.
 
 ## Finding your way
 
@@ -73,24 +79,42 @@ After the Ice gym Wren fits it with floats, and from then on it rides straight o
 ## Coins, Creatastops and Storage
 
 - Beating a trainer pays **coins** (◎); Gym Leaders pay triple.
-- Most towns have a **Creatastop**, a stall with a striped awning. Face it and press Enter to buy potions, Creataballs,
+- Most towns have a **Creatastop**, a small red-roofed shop with a striped awning. Walk in at its door to buy potions, Creataballs,
   Power Cards of that town's element, and clothes. More goods appear as you win badges.
 - There are 126 pieces of clothing. The Wardrobe only lists the ones you own; the rest come from Creatastops (each town
   stocks different ones), sparkles and trainers.
 - Your party holds **six** Creatamon. Forge a seventh and it goes to **Storage**, where it can be swapped in from the menu.
 - Potions and Revives can be used straight from the Bag (press E), as well as in battle.
 
-## Alphas and Alpha rank
+## Alphas and Champion rank
 
 - Once the Gym Challenge is under way, **alpha Creatamon** prowl the open ground beside long grass: big, glowing red,
-  several levels above the local wildlife and with far more health.
+  six levels above the local wildlife, with three extra health cards and punching gloves. They are uncommon: at most
+  two are about at once, and a new one only sometimes turns up.
 - They wander until you come within six tiles, then charge. If one touches you, you battle it. You can Run (it loses
   interest for a few seconds), and they will not follow you into a town.
-- Beating one earns coins, a sure Power Card and **Alpha rank**. The titles, in order: Alpha I, II, III · King I, II, III ·
-  Emperor I, II, III · Conqueror I, II, III (1, 2, 3, 4, 6, 8, 10, 12, 15, 18, 21 and 24 alpha wins).
-- The Champion only accepts challengers ranked **Emperor I** or higher (10 alpha wins). Beating him makes your title **Champion**.
-- Stand still for three seconds and your title appears above your head. It is also shown in the menu.
+- Beating one earns coins, a sure Power Card and **Champion rank**. There are seven tiers of three steps each: Alpha,
+  King, Emperor, Conqueror, Warlord, Legend and Mythic (I, II, III). Each tier costs more wins per step than the last:
+  Alpha I takes 2 alpha wins, King I 9, Emperor I 19, Conqueror I 32, Warlord I 48, Legend I 67, Mythic III 105.
+- The Champion only accepts challengers ranked **King I** or higher (9 alpha wins). Beating him makes you **Champion I**,
+  and every five alphas after that adds a numeral: Champion II, III, IV, V... without end.
+- Stand still for three seconds and your title appears above your head. It is also on your Trainer Card.
 - In the 3D view long grass stands up out of the ground, and you wade through it.
+
+## Harder as you go
+
+- From the third gym on, the Leader's **gym trainers** must be beaten first, back to back with no healing in between:
+  one at gyms 3 to 5, two at gyms 6 to 9, three from gym 10. Trainers you have beaten stay beaten if you lose later.
+- Leaders pick their best move more and more often, their Creatamon carry extra health cards, from gym 5 they hold
+  items, and from gym 8 they bring a fifth Creatamon (a sixth from gym 12).
+
+## Extras
+
+- **Fast travel**: once you have stood on a town's heal pad, the Town Map can take you straight back there.
+- **Trophies**: 22 milestones, each paying coins, announced with a pop-up.
+- **Shiny Creatamon**: one wild Creatamon in forty (one alpha in twenty) is shiny, and leaves a purse of coins.
+- **Daily gift**: coins and a Potion the first time you play each day, growing for up to seven days in a row.
+- **Trainer Card**: your title, badges, time played, battles won and other records.
 
 ## Developer mode
 

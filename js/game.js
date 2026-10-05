@@ -32,7 +32,8 @@
     cards: {}, party: [], chests: {}, beaten: {}, f: {}, badges: {}, smashed: {}, solved: {}, quiz: 0,
     player: null, wardrobe: {}, seen: {},
     items: {}, sprays: {}, sprayOwned: { star: true, smile: true }, spray: 'star', tips: {},
-    money: 0, storage: [], explored: '', alphaWins: 0, dev: null,
+    money: 0, storage: [], explored: '', alphaWins: 0, champAt: null, dev: null,
+    stats: { wins: 0, trainers: 0, steps: 0, time: 0, shinies: 0 }, trophies: {}, visited: {}, daily: null, streak: 0, trials: {},
   });
   // packSeen: the explored map, defined with the minimap below.
   const save = () => { try { S.explored = packSeen(); localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } };
@@ -45,6 +46,8 @@
         // Saves from before the bike: it comes with the endorsement, and its floats with Surf.
         if (s.f && s.f.endorsed) s.f.bike = true;
         if (s.f && s.f.surf) s.f.hydro = true;
+        // Champions from before Champion rank had numerals start counting from here.
+        if (s.f && s.f.champion && s.champAt == null) s.champAt = s.alphaWins || 0;
         return { ...newState(), ...s };
       }
       if (!s) return s;
@@ -65,6 +68,7 @@
   const cardLabel = (id) => `${'★'.repeat(CARDS[id].tier)} ${CARDS[id].name}`;
   const healAll = () => S.party.forEach((c) => { c.hp = CM.maxHp(c); });
   const badgeCount = () => CM.badgeCount(S);
+  const myTitle = () => CM.title(S.alphaWins, S.f.champion, S.champAt);
   const isDone = (id) => !!(S.solved[id] || (MAPS[id].el && S.badges[MAPS[id].el]));
 
   // ---------- Dialog ----------
@@ -78,11 +82,13 @@
     else $dialog.textContent = text;
     $dialog.hidden = false;
     advanceAt = performance.now();
-    advance = () => { advance = null; resolve(); };
+    const mine = advance = () => { advance = null; resolve(); };
+    // In battle, ordinary lines move on by themselves after a moment (longer lines wait longer). Tips never do.
+    if (SFX.opts.auto && !$battle.hidden && !holding) setTimeout(() => { if (advance === mine) mine(); }, Math.min(6000, 700 + text.length * 40));
   });
   const tryAdvance = () => {
     // The short guard stops the click/keypress that opened a message from also dismissing it.
-    if (advance && performance.now() - advanceAt > 120) advance();
+    if (advance && performance.now() - advanceAt > 120) { SFX.play('blip'); advance(); }
   };
   const sayAll = async (lines) => { for (const line of [].concat(lines)) await say(line); };
   // Runs a conversation or event with the world paused, then hands control back.
@@ -101,6 +107,7 @@
   const giveCards = async (ids) => {
     for (const id of ids) {
       addCard(id);
+      SFX.play('item');
       await say(`You got a Power Card: ${cardLabel(id)}! (${CM.cardDesc(CARDS[id])})`);
     }
   };
@@ -108,14 +115,17 @@
   const giveItems = async (ids) => {
     for (const id of ids) {
       addItem(id);
+      SFX.play('item');
       await say(`You got ${/^[aeiou]/i.test(ITEMS[id].name) ? 'an' : 'a'} ${ITEMS[id].name}! (${ITEMS[id].desc})`);
     }
   };
   // The first time something new comes up, explain it once.
-  const tip = async (id, lines) => { if (!S.tips[id]) { S.tips[id] = true; await sayAll(lines); } };
+  let holding = false;   // a tip is on screen: it waits for the player however long that takes
+  const tip = async (id, lines) => { if (!S.tips[id]) { S.tips[id] = true; holding = true; try { await sayAll(lines); } finally { holding = false; } } };
   const giveClothes = async (ids) => {
     for (const id of ids) {
       S.wardrobe[id] = true;
+      SFX.play('item');
       await say(`You got new clothes: ${CLOTHES[id].name}! Try them on in the Wardrobe (press M).`);
     }
   };
@@ -137,7 +147,9 @@
   // Big, strong wild Creatamon that prowl the open ground beside long grass. They wander until they spot the player,
   // then give chase; if one catches up, it is a battle. They are not saved: fresh ones turn up as the player travels.
   const alphas = [];
-  const ALPHA_MAX = 3, ALPHA_SIGHT = 6, ALPHA_WALK = 430, ALPHA_RUN = 165;
+  const ALPHA_MAX = 2, ALPHA_SIGHT = 6, ALPHA_WALK = 430, ALPHA_RUN = 165;
+  // How often a new one may turn up (ms), and the chance that it does.
+  const ALPHA_EVERY = 5000, ALPHA_CHANCE = 0.3;
   let alphaSpawn = 0;
   const isGrass = (x, y) => { const ch = CM.charAt('world', x, y); return ch !== '~' && !!CM.ZONE_OF[ch]; };
   const grassNear = (x, y, r) => { for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (isGrass(x + i, y + j)) return [x + i, y + j]; return null; };
@@ -147,25 +159,30 @@
     if (!('.=sS_'.includes(ch) || (chasing && isGrass(x, y)))) return false;
     return !!CM.areaAt('world', x, y).lv && !npcAt(x, y) && !pickupAt(x, y) && !alphas.some((a) => a.x === x && a.y === y);
   };
+  // An alpha: six levels over the local wildlife (a little past the level limit at most), three extra health cards,
+  // punching gloves, and one in twenty is shiny.
+  function makeAlpha(species, area) {
+    const c = CM.spawn(species, Math.min((area.lv || [5, 5])[1] + 6, CM.levelCap(badgeCount()) + 3));
+    c.hpCards.push('hp250', 'hp250', 'hp100');
+    Object.assign(c, { species, name: `Alpha ${species}`.slice(0, 18), alpha: true, item: 'gloves', shiny: Math.random() < 0.05 });
+    c.hp = CM.maxHp(c);
+    return c;
+  }
   function spawnAlpha(x, y) {
     const area = CM.areaAt('world', x, y), near = grassNear(x, y, 2);
     const list = CM.WILD[area.wild || CM.ZONE_OF[CM.charAt('world', ...near)]];
     const species = list[Math.floor(Math.random() * list.length)][0];
-    const c = CM.spawn(species, Math.min(area.lv[1] + 4, CM.levelCap(badgeCount()) + 2));
-    c.hpCards.push('hp250');
-    Object.assign(c, { species, name: `Alpha ${species}`.slice(0, 18), alpha: true, hp: 0 });
-    c.hp = CM.maxHp(c);
-    alphas.push({ c, x, y, px: x, py: y, t: 1, dur: ALPHA_WALK, wait: 400 + Math.random() * 800, rest: 0, chase: false, cv: null });
+    alphas.push({ c: makeAlpha(species, area), x, y, px: x, py: y, t: 1, dur: ALPHA_WALK, wait: 400 + Math.random() * 800, rest: 0, chase: false, cv: null });
   }
   function updateAlphas(dt) {
     if (S.map !== 'world' || !S.f.ceremony || !hasFighter() || (S.dev && S.dev.noWild)) { alphas.length = 0; return; }
     // Fresh ones appear a little way off, on open ground next to long grass; ones left far behind are forgotten.
     if ((alphaSpawn -= dt) <= 0) {
-      alphaSpawn = 1400;
+      alphaSpawn = ALPHA_EVERY;
       for (let i = alphas.length - 1; i >= 0; i--) if (Math.abs(alphas[i].x - S.x) + Math.abs(alphas[i].y - S.y) > 30) alphas.splice(i, 1);
-      for (let tries = 0; tries < 24 && alphas.length < ALPHA_MAX; tries++) {
+      for (let tries = Math.random() < ALPHA_CHANCE ? 0 : 99; tries < 24 && alphas.length < ALPHA_MAX; tries++) {
         const x = S.x + Math.floor(Math.random() * 31) - 15, y = S.y + Math.floor(Math.random() * 23) - 11;
-        if (Math.abs(x - S.x) + Math.abs(y - S.y) >= 8 && alphaSpot(x, y) && grassNear(x, y, 2)) { spawnAlpha(x, y); break; }
+        if (Math.abs(x - S.x) + Math.abs(y - S.y) >= 10 && alphaSpot(x, y) && grassNear(x, y, 2)) { spawnAlpha(x, y); break; }
       }
     }
     for (const a of alphas) {
@@ -176,7 +193,9 @@
       if (!move && a.rest <= 0 && a.x === S.x && a.y === S.y) return void fightAlpha(a);
       if ((a.wait -= dt) > 0) continue;
       const dx = S.x - a.x, dy = S.y - a.y;
+      const calm = !a.chase;
       a.chase = a.rest <= 0 && Math.abs(dx) + Math.abs(dy) <= ALPHA_SIGHT;
+      if (a.chase && calm) SFX.play('alert');
       let step = null;
       if (a.chase) {
         // Close the larger gap first; if that way is shut, try the other.
@@ -195,20 +214,21 @@
     run(async () => {
       await say(`The ${a.c.name} caught you! It roars and attacks!`);
       await tip('alpha', ['Alphas are far stronger than ordinary wild Creatamon: higher level, with much more health.',
-        'You can Run, and it will lose interest for a moment. Beat it and you earn Alpha rank, coins and a sure Power Card.']);
-      const result = await battle([a.c], { zone: bgZone(), alpha: true });
+        'You can Run, and it will lose interest for a moment. Beat it and you earn Champion rank, coins and a sure Power Card.']);
+      const result = await battle([a.c], { zone: bgZone(), alpha: true, skill: 0.9 });
       $battle.hidden = true;
       if (result === 'lose') { alphas.length = 0; return whiteout(); }
       if (result !== 'win') { Object.assign(a, { rest: 6000, chase: false }); return; }
       alphas.splice(alphas.indexOf(a), 1);
-      const before = CM.title(S.alphaWins), coins = a.c.level * 25;
+      if (a.c.shiny) await shinyPrize(a.c);
+      const before = myTitle(), coins = a.c.level * 40;
       S.alphaWins = (S.alphaWins || 0) + 1;
       S.money += coins;
       await say(`You defeated an alpha! That is ${S.alphaWins} so far. You found ${COIN}${coins} where it fell.`);
       await giveCards([CM.rollDrop(CM.areaAt('world', S.x, S.y).drops || [40, 45, 15], Math.random, true)]);
-      const now = CM.title(S.alphaWins);
-      if (now !== before) await sayAll([`Your Alpha rank rose to ${now}!`, 'Stand still for a few seconds and your title shows above your head.']);
-      else { const next = CM.ALPHA_NEED[CM.alphaRank(S.alphaWins)]; if (next) await say(`${next - S.alphaWins} more alpha win${next - S.alphaWins === 1 ? '' : 's'} to reach ${CM.ALPHA_TITLES[CM.alphaRank(S.alphaWins)]}.`); }
+      const now = myTitle();
+      if (now !== before) await sayAll([`Your Champion rank rose to ${now}!`, 'Stand still for a few seconds and your title shows above your head.']);
+      else { const next = CM.nextRank(S.alphaWins, S.f.champion, S.champAt); if (next) await say(`${next.left} more alpha win${next.left === 1 ? '' : 's'} to reach ${next.name}.`); }
     });
   }
   // An alpha out in the world: its own portrait, larger than a person, in a pulsing red glow.
@@ -249,7 +269,7 @@
       badge('Shadow', ['holler', 'nettie2']), badge('Mind'), badge('Robot'), badge('Light'), badge('Toxic'), [!b.Normal, () => { S.quiz = 5; badge('Normal')[1](); }],
       [!f.semis, () => { flag('semi1'); flag('semis'); }], [!f.opaline, () => flag('opaline')], [!f.night, () => { f.finals = 4; flag('night'); }],
       [!f.blade, () => { flag('blade'); flag('shortcut'); }], [!f.dawn, () => { flag('sterling'); flag('dawn'); }],
-      [CM.alphaRank(S.alphaWins) < CM.CUP_RANK, () => { S.alphaWins = CM.ALPHA_NEED[CM.CUP_RANK - 1]; }], [!f.champion, () => flag('champion')],
+      [CM.alphaRank(S.alphaWins) < CM.CUP_RANK, () => { S.alphaWins = CM.ALPHA_NEED[CM.CUP_RANK - 1]; }], [!f.champion, () => { flag('champion'); S.champAt = S.alphaWins || 0; }],
     ];
     const next = steps.find((st) => st[0]);
     if (next) next[1]();
@@ -287,11 +307,7 @@
   // Developer spawn: an alpha on any open tile, grass nearby or not.
   function alphaSpawnAt(x, y) {
     const area = CM.areaAt('world', x, y), species = CM.WILD[area.wild || 1][0][0];
-    const c = CM.spawn(species, Math.min((area.lv || [5, 5])[1] + 4, CM.levelCap(badgeCount()) + 2));
-    c.hpCards.push('hp250');
-    Object.assign(c, { species, name: `Alpha ${species}`.slice(0, 18), alpha: true });
-    c.hp = CM.maxHp(c);
-    alphas.push({ c, x, y, px: x, py: y, t: 1, dur: ALPHA_WALK, wait: 1500, rest: 0, chase: false, cv: null, fresh: true });
+    alphas.push({ c: makeAlpha(species, area), x, y, px: x, py: y, t: 1, dur: ALPHA_WALK, wait: 1500, rest: 0, chase: false, cv: null, fresh: true });
   }
 
   // ---------- Minimap ----------
@@ -305,7 +321,7 @@
     R: '#b8553c', W: '#efe6d2', D: '#5a4632', M: '#c9a468' };
   const mapColor = (x, y) => {
     const ch = MAPS.world.rows[y][x], tint = CM.TINT[`${x},${y}`];
-    return tint && 'GWD'.includes(ch) ? (ELEMENTS[tint] || { color: tint === 'League' ? '#e0483c' : '#7d8496' }).color : MAP_COLORS[ch] || '#7ec850';
+    return tint && 'GWD'.includes(ch) ? (ELEMENTS[tint] || { color: tint === 'League' ? '#e0483c' : tint === 'Stop' ? '#ffd24a' : '#7d8496' }).color : MAP_COLORS[ch] || '#7ec850';
   };
   const paintSeen = (x, y) => { const g = mapCv.getContext('2d'); g.fillStyle = mapColor(x, y); g.fillRect(x, y, 1, 1); };
   const packSeen = () => { let out = ''; for (let i = 0; i < seenMap.length; i += 6) { let v = 0; for (let k = 0; k < 6; k++) v |= (seenMap[i + k] || 0) << k; out += String.fromCharCode(48 + v); } return out; };
@@ -353,6 +369,70 @@
     dot(px, py, span === MW ? k * 1.8 : 4.5, '#ffffff', '#1d2437');
   }
 
+  // ---------- Trophies ----------
+  // Small goals with a coin prize each. They are checked as the player goes, and pop up as a toast when earned.
+  const seenCount = () => CM.DEX.filter((m) => S.seen[m.name]).length;
+  const TROPHIES = [
+    ['first', '🐣', 'First Friend', 'Forge your first Creatamon', () => S.party.length + S.storage.length >= 1],
+    ['team', '🐾', 'Full House', 'Have a full party of six', () => S.party.length >= CM.MAX_PARTY],
+    ['evolve', '🌟', 'All Grown Up', 'Evolve a Creatamon to its final form', () => [...S.party, ...S.storage].some((c) => c.stage === 2)],
+    ['badge1', '🥉', 'On the Board', 'Win your first badge', () => badgeCount() >= 1],
+    ['badge5', '🥈', 'Halfway Hero', 'Win five badges', () => badgeCount() >= 5],
+    ['badge10', '🥇', 'Badge Collector', 'Win ten badges', () => badgeCount() >= 10],
+    ['badges', '🏅', 'Clean Sweep', `Win all ${TOTAL} badges`, () => badgeCount() >= TOTAL],
+    ['champion', '👑', 'Champion of Galdra', 'Beat Champion Vex', () => !!S.f.champion],
+    ['alpha1', '🔥', 'Alpha Slayer', 'Defeat an alpha', () => S.alphaWins >= 1],
+    ['king', '⚔', 'Royalty', 'Reach the rank of King I', () => !!S.f.champion || CM.alphaRank(S.alphaWins) >= 4],
+    ['mythic', '🐉', 'Stuff of Myth', 'Reach the rank of Mythic I', () => CM.alphaRank(S.alphaWins) >= 19],
+    ['shiny', '✨', 'Ooh, Shiny', 'Defeat a shiny Creatamon', () => S.stats.shinies >= 1],
+    ['dex20', '📖', 'Field Notes', 'See 20 kinds of Creatamon', () => seenCount() >= 20],
+    ['dex60', '📚', 'Naturalist', 'See 60 kinds of Creatamon', () => seenCount() >= 60],
+    ['dexall', '🎓', 'Professor', 'See every kind of Creatamon', () => seenCount() >= CM.DEX.length],
+    ['wins50', '💪', 'Battle Hardened', 'Win 50 battles', () => S.stats.wins >= 50],
+    ['wins250', '🏆', 'Unstoppable', 'Win 250 battles', () => S.stats.wins >= 250],
+    ['steps', '👟', 'Marathon', 'Walk 5,000 steps', () => S.stats.steps >= 5000],
+    ['rich', '💰', 'Moneybags', `Hold ${COIN}5,000 at once`, () => S.money >= 5000],
+    ['style', '👒', 'Fashionista', 'Own 15 pieces of bought or found clothing', () => Object.keys(S.wardrobe).length >= 15],
+    ['towns', '🧭', 'Globetrotter', 'Use the heal pad in 10 different towns', () => Object.keys(S.visited).length >= 10],
+    ['streak', '📅', 'Regular', 'Play three days in a row', () => S.streak >= 3],
+  ];
+  const TROPHY_PRIZE = 200;
+  const toasts = [];
+  let toasting = false;
+  function toast(icon, title, text) {
+    toasts.push([icon, title, text]);
+    if (toasting) return;
+    toasting = true;
+    const next = () => {
+      const t = toasts.shift(), $toast = $('toast');
+      if (!t) { toasting = false; return; }
+      $toast.innerHTML = `<i>${t[0]}</i><div><b>${esc(t[1])}</b><small>${esc(t[2])}</small></div>`;
+      $toast.classList.remove('show'); void $toast.offsetWidth; $toast.classList.add('show');
+      SFX.play('level');
+      setTimeout(next, 3400);
+    };
+    next();
+  }
+  function checkTrophies() {
+    for (const [id, icon, name, , earned] of TROPHIES) {
+      if (S.trophies[id] || !earned()) continue;
+      S.trophies[id] = true;
+      S.money += TROPHY_PRIZE;
+      toast(icon, `Trophy: ${name}`, `+${COIN}${TROPHY_PRIZE}`);
+    }
+  }
+  // Coming back on a new day earns a small gift, bigger for each day in a row (up to a week).
+  function dailyGift() {
+    const day = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`, today = day(new Date());
+    if (!S.f.start || S.daily === today) return;
+    S.streak = S.daily === day(new Date(Date.now() - 864e5)) ? (S.streak || 0) + 1 : 1;
+    S.daily = today;
+    const coins = 100 * Math.min(7, S.streak);
+    S.money += coins;
+    addItem('potion');
+    toast('🎁', `Daily gift · day ${S.streak}`, `+${COIN}${coins} and a Potion`);
+  }
+
   // ---------- HUD ----------
   let lastArea = null;
   function updateHud() {
@@ -369,6 +449,7 @@
     }
     reveal();
     drawMap($('minimap'), 46);
+    checkTrophies();
   }
 
   function goTo(map, x, y, dir = S.dir) {
@@ -395,6 +476,9 @@
     S.dir = dir;
     const warp = CM.WARPS[`${S.map}:${S.x + DIRS[dir][0]},${S.y + DIRS[dir][1]}`];
     if (warp && warp.need && warp.need(S)) return;
+    // Walking in at a Creatastop's door opens the shop.
+    const store = S.map === 'world' && CM.STOP_AT[`${S.x + DIRS[dir][0]},${S.y + DIRS[dir][1]}`];
+    if (store) { for (const k in keys) keys[k] = false; shop = store; page = 'shop'; return openMenu(); }
     // A bike with floats rides straight out onto water.
     const afloat = S.bike && S.f.hydro && !S.surf && CM.charAt(S.map, S.x + DIRS[dir][0], S.y + DIRS[dir][1]) === '~';
     if (afloat) S.surf = true;
@@ -427,6 +511,7 @@
   };
 
   async function onStep() {
+    S.stats.steps++;
     const m = MAPS[S.map], ch = CM.charAt(S.map, S.x, S.y);
     if (S.surf && ch !== '~') S.surf = false;
     const warp = CM.WARPS[`${S.map}:${S.x},${S.y}`];
@@ -439,8 +524,11 @@
     updateHud();
     if (ch === 'H') {
       S.heal = [S.map, S.x, S.y];
+      // A town whose heal pad you have stood on can be travelled back to from the Town Map.
+      if (S.map === 'world') S.visited[`${S.x},${S.y}`] = CM.areaAt('world', S.x, S.y).name;
       if (S.party.some((c) => c.hp < CM.maxHp(c))) {
         healAll();
+        SFX.play('heal');
         if (!S.tips.pad) { S.tips.pad = true; await talk('This is a heal pad. Step on one any time to restore your Creatamon for free. It also becomes the place you return to if you lose a battle.'); }
         await talk('The heal pad hums... your Creatamon are fully restored!');
       }
@@ -469,6 +557,21 @@
       S.solved[S.map] = true;
       await talk('Clunk! The gate to the Leader swings open.');
     }
+    // Trainers have a field of view: step next to one, or within three clear tiles in front of them, and they challenge you.
+    const eyes = hasFighter() && NPCS.find((n) => {
+      if (n.map !== S.map || !n.team || S.beaten[n.id] || (n.show && !n.show(S)) || (n.need && n.need(S))) return false;
+      const dx = S.x - n.x, dy = S.y - n.y;
+      if (Math.abs(dx) + Math.abs(dy) === 1) return true;
+      if (dx || dy < 2 || dy > 3) return false;
+      for (let y = n.y + 1; y < S.y; y++) if (!CM.passable(S.map, n.x, y, P, S) || npcAt(n.x, y)) return false;
+      return true;
+    });
+    if (eyes) {
+      SFX.play('alert');
+      S.dir = eyes.x > S.x ? 'right' : eyes.x < S.x ? 'left' : eyes.y > S.y ? 'down' : 'up';
+      await run(async () => { await say(`${eyes.name} spotted you!`); await trainer(eyes); });
+      return save();
+    }
     const habitat = CM.ZONE_OF[ch], area = CM.areaAt(S.map, S.x, S.y);
     if (habitat && area.lv && hasFighter() && !(S.dev && S.dev.noWild) && grace-- <= 0 && Math.random() < CM.ENCOUNTER_RATE) {
       grace = 3;
@@ -476,9 +579,12 @@
         await tip('wild', ['Something rustles! Tall grass, flowers, forest floor and cave rubble hide wild Creatamon. Walking through them can start a battle at any step.',
           'Wild battles are how your Creatamon earn XP and grow, and wild Creatamon sometimes drop Power Cards. If yours is hurt, press Run to get away, and keep to the paths to avoid them.']);
         const foe = CM.genWild(area.wild || habitat, area.lv);
+        // One in forty is shiny: strangely coloured, and it always leaves a card and a purse of coins.
+        if (Math.random() < 1 / 40) foe.shiny = true;
         const result = await battle([foe], { zone: habitat });
         if (result === 'win') {
-          const drop = CM.rollDrop(area.drops, Math.random, foe.rare);
+          if (foe.shiny) await shinyPrize(foe);
+          const drop = CM.rollDrop(area.drops, Math.random, foe.rare || foe.shiny);
           if (drop) { await say(`The wild ${foe.name} dropped something...`); await giveCards([drop]); }
           // Now and then they leave a potion behind, or even a Creataball.
           const luck = Math.random();
@@ -490,6 +596,12 @@
     save();
   }
 
+  async function shinyPrize(foe) {
+    S.stats.shinies++;
+    S.money += 500;
+    SFX.play('coin');
+    await say(`The shiny ${foe.name} left ${COIN}500 glittering in the grass!`);
+  }
   async function whiteout() {
     $battle.hidden = true;
     await say('All your Creatamon fainted! You hurry back to the last heal pad...');
@@ -501,15 +613,17 @@
 
   // A battle against someone. Resolves true on a win; a loss sends the player back to the heal pad.
   async function duel(name, team, opts = {}) {
-    const foes = opts.boss ? team.map((t) => CM.spawn(...t)) : CM.makeTeam(name, team);
+    const foes = opts.foes || (opts.boss ? team.map((t) => CM.spawn(...t)) : CM.makeTeam(name, team));
     const result = await battle(foes, { trainer: name, zone: bgZone(), max: S.map.startsWith('gym_'), ...opts });
     $battle.hidden = true;
     if (result === 'win') {
+      S.stats.trainers++;
       if (!opts.boss) {
         const won = CM.prize(team, opts.big);
         S.money += won;
+        SFX.play('coin');
         await say(`${name} paid out ${COIN}${won} for the win!`);
-        await tip('money', `Beating trainers earns coins (${COIN}). Spend them at a Creatastop, the stall with the striped awning in most towns, on potions, Creataballs, Power Cards and clothes.`);
+        await tip('money', `Beating trainers earns coins (${COIN}). Spend them at a Creatastop, the little red-roofed shop in most towns (walk in at its door), on potions, Creataballs, Power Cards and clothes.`);
       }
       return true;
     }
@@ -526,12 +640,9 @@
 
   // Field moves: a Creatamon in the party that knows the move is summoned to use it.
   async function fieldMove(id, need, act) {
-    const user = S.party.find((c) => c.moves.includes(id));
-    if (!user) {
-      return talk(S.cards[id]
-        ? `${need} You have the ${CARDS[id].name} card: slot it onto a Creatamon at the Forge (press M).`
-        : `${need} A Creatamon that knows ${CARDS[id].name} could manage it.`);
-    }
+    // Whoever knows the move does it; failing that, holding the card is enough for the lead to manage.
+    const user = S.party.find((c) => c.moves.includes(id)) || (S.cards[id] > 0 && S.party[0]);
+    if (!user) return talk(`${need} You need the ${CARDS[id].name} card to get past.`);
     await run(async () => {
       await sayAll([`${S.player.name} summoned ${user.name}!`, `${user.name} used ${CARDS[id].name}!`]);
       $world.classList.remove('shake');
@@ -545,7 +656,7 @@
     if (move) return;
     const tx = S.x + DIRS[S.dir][0], ty = S.y + DIRS[S.dir][1], k = `${tx},${ty}`;
     const npc = npcAt(tx, ty);
-    if (npc && npc.stop) { shop = npc.stop; page = 'shop'; return openMenu(); }
+    if (S.map === 'world' && CM.STOP_AT[k]) { shop = CM.STOP_AT[k]; page = 'shop'; return openMenu(); }
     if (npc) return run(() => meet(npc));
     const ch = CM.charAt(S.map, tx, ty);
     const warp = CM.WARPS[`${S.map}:${k}`], why = warp && warp.need && warp.need(S);
@@ -675,9 +786,18 @@
   async function leader(npc) {
     const gm = npc.gym;
     if (S.badges[gm.el]) return sayAll(`${gm.name}: That battle of ours is still the talk of ${gm.town}.`);
+    // Later gyms make you get through the Leader's trainers first, back to back. Ones already beaten stay beaten.
+    for (let i = S.trials[gm.el] || 0; i < gm.trainers.length; i++) {
+      await say(i ? `${gm.name}: And the next! No rest in my gym.`
+        : `${gm.name}: Not so fast. Nobody battles me without getting past my gym trainer${gm.trainers.length > 1 ? `s, all ${gm.trainers.length} of them` : ''}!`);
+      if (!await duel(`${gm.town} Gym Trainer`, gm.trainers[i], { zone: 'in', skill: gm.skill })) return;
+      S.trials[gm.el] = i + 1;
+      save();
+    }
     await say(`${gm.name}: ${gm.pre}`);
-    if (!await duel(gm.name, gm.team, { zone: 'in', foeMax: true, big: true })) return;
+    if (!await duel(gm.name, gm.team, { zone: 'in', foeMax: true, big: true, skill: gm.skill, foes: CM.gymTeam(gm) })) return;
     S.badges[gm.el] = true;
+    SFX.play('badge');
     S.solved[S.map] = true;
     await sayAll([`${gm.name}: ${gm.post}`, `You received the ${gm.el} Badge! That makes ${badgeCount()} of ${TOTAL}.`]);
     await giveCards(gm.reward);
@@ -931,14 +1051,15 @@
       if (!f.dawn) return say('Cup Registrar: The final is suspended! Your friend Finn ran for the west gate, shouting about the Drowsing Grove.');
       if (CM.alphaRank(S.alphaWins) < CM.CUP_RANK) {
         return sayAll([`Cup Registrar: The Champion only accepts challengers who hold the rank of ${CM.ALPHA_TITLES[CM.CUP_RANK - 1]} or higher.`,
-          `Cup Registrar: You are ${CM.title(S.alphaWins) || 'unranked'}. Rank is earned by defeating alpha Creatamon, the huge ones that prowl near long grass. You have beaten ${S.alphaWins || 0} of the ${CM.ALPHA_NEED[CM.CUP_RANK - 1]} you need.`]);
+          `Cup Registrar: You are ${myTitle() || 'unranked'}. Rank is earned by defeating alpha Creatamon, the huge ones that prowl near long grass. You have beaten ${S.alphaWins || 0} of the ${CM.ALPHA_NEED[CM.CUP_RANK - 1]} you need.`]);
       }
       await sayAll(['Three days later, the stadium is full to the rafters.',
         'Champion Vex: You saved Galdra. But that is not why they are here. They came to see whether anyone can beat me. Let us give them a Champion-time match!']);
       if (!await duel('Champion Vex', TEAMS.vex, CUP)) return;
       flag('champion');
+      S.champAt = S.alphaWins || 0;
       await sayAll(['Champion Vex: ...My unbeaten run ends here. I could not be prouder to lose.', `${you()} is the new Champion of Galdra!`,
-        'Your title is now: Champion! Stand still for a moment and it shows above your head.']);
+        'Your title is now Champion I! Every five alphas you beat from here adds a numeral: Champion II, III, IV and on, for as long as you keep winning.']);
       await giveCards(['inferno_crash', 'hyper_burst', 'hp250']);
       await giveClothes(['crown', 'champion_cape']);
       await say('Thank you for playing Creatamon! The world stays open: keep forging, collecting and exploring.');
@@ -1008,19 +1129,18 @@
     ['Heal', 'Step on a pink heal pad to restore your whole party. If everyone faints you return to the last pad you used.'],
     ['Gyms', 'Each town\'s gym has a puzzle before its Leader. Press R to start a puzzle over. In gyms you can use Max Mode once per battle.'],
     ['Bike', 'Once the Champion gives you a bike, press Q outdoors to hop on or off. It is twice as fast as walking. Later it gets floats: then just ride onto water to cross it.'],
-    ['Alphas', 'Huge red-glowing alpha Creatamon prowl near long grass. If one spots you it charges; if it touches you, you battle. They are tough, but beating them raises your Alpha rank (Alpha I up to Conqueror III), which the Champion demands. Stand still to show your title.'],
-    ['Field moves', 'Rock Smash breaks cracked rocks and Surf crosses water: slot the card on a Creatamon (a rebuild, so keep a Creataball spare), face the obstacle and press Enter.'],
+    ['Alphas', 'Huge red-glowing alpha Creatamon prowl near long grass. If one spots you it charges; if it touches you, you battle. They are tough, but beating them raises your Champion rank (Alpha I up through King, Emperor, Conqueror, Warlord, Legend and Mythic), which the Champion demands. Champions keep climbing: Champion II, III, IV... Stand still to show your title.'],
+    ['Trainers', 'Trainers on the routes watch the road. Step right beside one, or up to three tiles in front of them, and they challenge you. Once beaten they leave you alone.'],
+    ['Fast travel', 'Once you have stood on a town\'s heal pad, the Town Map in the menu can take you straight back there.'],
+    ['Extras', 'Trophies pay coins for milestones. One wild Creatamon in forty is shiny and leaves a purse of coins. Come back each day for a small gift. Your Trainer Card keeps your records.'],
+    ['Field moves', 'Rock Smash breaks cracked rocks and Surf crosses water: once you hold the card (no need to slot it), face the obstacle and press Enter.'],
     ['Spray paint', 'Press G to spray your chosen design on the ground in front of you.'],
   ];
   async function intro() {
     await run(async () => {
-      await sayAll(['Welcome to Creatamon! Press Enter (or click this box) to read on.',
-        'Creatamon are creatures that battle for you. You never fight yourself: you tell your Creatamon which attack to use, and it takes turns trading hits with the other side.',
-        'Your goal: travel from town to town, beat the Leader of each of the 14 gyms to win its badge, then win the Champion Cup.',
-        'Walk with the arrow keys or W A S D. To talk to someone, walk up to them, face them and press Enter.',
-        'Lost? Press M for the menu. The red box at the top always says exactly where to go next, and the How to play button explains everything again.',
-        'Two things to look out for: sparkles on the ground are free gifts (walk over them), and a pink pad with a cross heals your Creatamon when you step on it.',
-        'Now let us get you a Creatamon of your own.']);
+      await sayAll(['Welcome to Creatamon! Press Enter, or click or tap this box, to read on.',
+        'Creatamon are creatures that battle for you. Your goal: beat the Leader of all 14 gyms, then win the Champion Cup.',
+        'Walk with the arrow keys or W A S D. To talk to someone, face them and press Enter. The bar at the top always says where to go next, and a red arrow points the way.']);
       await sayAll([`Finn: ${you()}! There you are! My big brother is home. THE Champion Vex!`,
         'Champion Vex: So this is the friend Finn never stops talking about.',
         'Champion Vex: In Galdra, Creatamon are not caught. They are created: you build one yourself out of Power Cards.',
@@ -1044,7 +1164,8 @@
   const hpClass = (f) => (f > 0.5 ? '' : f > 0.2 ? 'mid' : 'low');
   function renderBattle() {
     const { me, foe } = B;
-    $('foeName').textContent = `${foe.rare ? '✦ ' : ''}${shownName(foe)}`;
+    $('foeName').textContent = `${foe.shiny ? '✨ ' : foe.rare ? '✦ ' : ''}${shownName(foe)}`;
+    $('foeSprite').classList.toggle('shiny', !!foe.shiny);
     $('foeLv').textContent = `Lv ${foe.level} · ${foe.element}${foe.max ? ' · MAX' : ''}`;
     $('meName').textContent = shownName(me);
     $('meLv').textContent = `Lv ${me.level} · ${me.element}${me.max ? ' · MAX' : ''}`;
@@ -1087,7 +1208,7 @@
     await say(`${shownName(att)} used ${m.name}!`);
     const r = CM.useMove(att, def, m);
     if (who === 'me' && S.dev && S.dev.ohko && r.dmg) def.hp = 0;
-    if (r.miss) return say('But it missed!');
+    if (r.miss) { SFX.play('miss'); return say('But it missed!'); }
     if (r.domain) {
       B.domain = { owner: att, turns: r.domain };
       $battle.classList.add('domain');
@@ -1096,13 +1217,14 @@
     }
     await animate(who, r.heal != null ? 'heal' : m.element);
     updateBars();
-    if (r.heal != null) return say(`${shownName(att)} recovered ${r.heal} HP!`);
+    if (r.heal != null) { SFX.play('heal'); return say(`${shownName(att)} recovered ${r.heal} HP!`); }
     if (r.blocked) return say(`${shownName(def)}'s ${ITEMS[def.item].name} nullified the hit!`);
     if (r.infinity) {
       flash($(`${who}Sprite`));
       return say(`The attack stops dead in the infinity around ${def.name}! ${shownName(att)} takes ${r.infinity} damage instead!`);
     }
     flash($(`${other}Sprite`));
+    SFX.play(r.eff > 1 || r.crit ? 'strong' : r.eff < 1 ? 'weak' : 'hit');
     if (r.crit) await say('A critical hit!');
     if (r.eff > 1) await say("It's super effective!");
     else if (r.eff < 1) await say("It's not very effective...");
@@ -1150,6 +1272,7 @@
         if (!b || b.disabled) return;
         $actions.onclick = null;
         $actions.hidden = true;
+        SFX.play(b.dataset.back ? 'back' : 'select');
         resolve(b.dataset);
       };
     });
@@ -1229,6 +1352,7 @@
     updateBars();
     if (levelled) {
       if (me === B.me) renderBattle();
+      SFX.play('level');
       for (let l = from + 1; l <= me.level; l++) await say(`${me.name} grew to level ${l}!`);
       await tip('level', ['Level up! XP comes from beating other Creatamon. Every level makes a Creatamon stronger, faster and tougher.',
         'Every Creatamon of yours that attacked the foe gets the XP, so swapping one in for a hit helps it grow too.']);
@@ -1243,9 +1367,15 @@
   async function battle(foes, opts) {
     mode = 'busy';
     B = { foe: foes[0], me: S.party.find((c) => c.hp > 0), maxUsed: false, domain: null, hit: new Set() };
+    SFX.play('battle');
+    SFX.music('battle');
     try {
-      return await fight(foes, opts);
+      const result = await fight(foes, opts);
+      if (result === 'win') S.stats.wins++;
+      return result;
     } finally {
+      $('foeSprite').classList.remove('shiny');
+      SFX.music('world');
       S.party.forEach((c) => CM.setMax(c, false));
       closeDomain();
       $('meSprite').classList.remove('max');
@@ -1268,20 +1398,17 @@
       await say(`${B.foe.name} looms over you!`);
     } else {
       await say(opts.phantom ? 'A shape in the fog blocks the way!'
-        : B.foe.rare ? `Whoa! A rare ${B.foe.name} appeared!` : `A wild ${B.foe.name} appeared!`);
+        : B.foe.shiny ? `✨ It sparkles... a SHINY ${B.foe.name} appeared! ✨` : B.foe.rare ? `Whoa! A rare ${B.foe.name} appeared!` : `A wild ${B.foe.name} appeared!`);
     }
     await say(`Go, ${B.me.name}!`);
-    await tip('battle', ['Your first battle! Here is how it works.',
-      'Your Creatamon is at the bottom left, the foe at the top right. The green bar by each one is its HP (health). Attacks shrink it, and when it runs out that Creatamon faints.',
-      'You take turns. Each turn, press Fight and pick one attack from the list; then the foe picks one. The faster Creatamon goes first.',
-      'Each attack shows its element and its power: higher power hurts more. An attack of your Creatamon\'s own element gets a bonus.',
-      'Elements beat each other like rock-paper-scissors: Water douses Fire, Fire burns Grass, Grass soaks up Water. "Super effective" means you picked well and did double damage.',
-      'The other buttons: Bag uses a Potion to heal, Creatamon swaps in another of yours, Run escapes from a wild Creatamon (never from a person).',
-      'Make every foe faint and you win. If all of yours faint you lose, but you just wake up at the last heal pad. Good luck!']);
+    await tip('battle', ['Your first battle! Your Creatamon is at the bottom left, the foe at the top right. The bar by each is its HP: at zero it faints.',
+      'Press Fight and pick an attack. You and the foe take turns. Elements work like rock-paper-scissors: Water beats Fire, Fire beats Grass, Grass beats Water.',
+      'Bag heals with a Potion, Creatamon swaps in another of yours, Run escapes a wild one. If all of yours faint you just wake up at the last heal pad.']);
 
     // Deals with anyone who has fainted. Returns 'win' | 'lose', 'next' if someone new came out, or null.
     const settle = async () => {
       if (B.foe.hp <= 0) {
+        SFX.play('faint');
         await say(`${foeTag}${shownName(B.foe)} fainted!`);
         endMax(B.foe);
         // Everyone still standing who attacked this foe earns the XP, starting with whoever is out now.
@@ -1298,6 +1425,7 @@
         return 'next';
       }
       if (B.me.hp <= 0) {
+        SFX.play('faint');
         await say(`${shownName(B.me)} fainted!`);
         endMax(B.me);
         if (!hasFighter()) return 'lose';
@@ -1342,7 +1470,7 @@
         await say('The shape does not move. The fog grows thicker...');
         continue;
       }
-      const foeMove = CM.pickMove(B.foe, B.me);
+      const foeMove = CM.pickMove(B.foe, B.me, Math.random, opts.skill);
       const mySpd = CM.stats(B.me).spd, foeSpd = CM.stats(B.foe).spd;
       const meFirst = mySpd > foeSpd || (mySpd === foeSpd && Math.random() < 0.5);
       const order = !myMove ? ['foe'] : meFirst ? ['me', 'foe'] : ['foe', 'me'];
@@ -1390,6 +1518,7 @@
   const sortedCards = (counts) => Object.keys(CARDS).filter((id) => counts[id] > 0);
 
   function openMenu() {
+    SFX.play('select');
     if (!shop && page === 'shop') page = 'home';
     mode = 'menu';
     $menu.hidden = false;
@@ -1421,14 +1550,14 @@
     if (help) return renderHelp();
     if (wardrobe) return renderWardrobe();
     if (forge) return renderForge();
-    ({ party: renderParty, storage: renderStorage, dex: renderDex, map: renderMapPage, sprays: renderSprays, shop: renderShop, dev: renderDev }[page] || renderHome)();
+    ({ party: renderParty, storage: renderStorage, dex: renderDex, map: renderMapPage, sprays: renderSprays, shop: renderShop, dev: renderDev, options: renderOptions, card: renderCard, trophies: renderTrophies }[page] || renderHome)();
   }
   // The front page: a grid of big tiles, one for each thing the menu can do.
   function renderHome() {
     const tile = (attr, icon, label, color, note = '') => `<button class="tile" ${attr} style="--c:${color}"><i>${icon}</i><b>${label}</b><small>${note}</small></button>`;
     $menu.className = 'home';
     $menu.innerHTML = `
-      <header><h2>${esc(S.player.name)}${CM.title(S.alphaWins, S.f.champion) ? ` <small class="rank">★ ${CM.title(S.alphaWins, S.f.champion)}</small>` : ''}</h2><span class="purse">${COIN}${S.money} &nbsp;·&nbsp; ${badgeCount()}/${TOTAL} badges</span></header>
+      <header><h2>${esc(S.player.name)}${myTitle() ? ` <small class="rank">★ ${myTitle()}</small>` : ''}</h2><span class="purse">${COIN}${S.money} &nbsp;·&nbsp; ${badgeCount()}/${TOTAL} badges &nbsp;<button data-a="close">Close</button></span></header>
       <p class="goal"><b>Next:</b> ${esc(objective())}</p>
       <div class="tiles">
         ${tile('data-page="party"', '🐾', 'Creatamon', '#e8384f', `${S.party.length}/${CM.MAX_PARTY} in party`)}
@@ -1440,7 +1569,9 @@
         ${tile('data-a="wardrobe"', '👕', 'Wardrobe', '#7a6cf0', 'Change your look')}
         ${tile('data-page="sprays"', '🎨', 'Sprays', '#c05ad6', 'Pick a design')}
         ${tile('data-a="howto"', '❓', 'How to play', '#7d8496', 'Controls and tips')}
-        ${tile('data-a="close"', '✖', 'Close', '#3a4258', 'Esc')}
+        ${tile('data-page="card"', '🪪', 'Trainer Card', '#e06aa0', myTitle() || 'Your record')}
+        ${tile('data-page="trophies"', '🏆', 'Trophies', '#c79a12', `${Object.keys(S.trophies).length}/${TROPHIES.length} earned`)}
+        ${tile('data-page="options"', '⚙', 'Options', '#3a4258', 'Sound and text')}
       </div>
       <div class="badges">${CM.GYM_ORDER.map((el) => `<span class="${S.badges[el] ? 'won' : ''}" style="--c:${ELEMENTS[el].color}" title="${el} Badge">${el}</span>`).join('')}</div>`;
   }
@@ -1492,11 +1623,40 @@
     : '<span class="unseen">???</span>')).join('')}</div>`;
   }
   function renderMapPage() {
+    const towns = Object.entries(S.visited);
     $menu.className = '';
     $menu.innerHTML = `${head('Town Map')}
       <canvas id="bigmap" width="${MW * 5}" height="${MH * 5}"></canvas>
-      <p class="empty">The map fills in as you explore. White dot: you. Gold ring: your next goal. Coloured roofs are gyms.</p>`;
+      <p class="empty">The map fills in as you explore. White dot: you. Gold ring: your next goal. Coloured roofs are gyms.</p>
+      <h3>Fast travel</h3>
+      <div class="pick">${towns.map(([at, name]) => `<button class="plain" data-fly="${at}">✈ ${esc(name)}</button>`).join('')
+        || '<p class="empty">Step on a town\'s pink heal pad and you can travel straight back to it from here.</p>'}</div>`;
     drawMap($('bigmap'));
+  }
+  // The player's record: who they are, how far they have come, and what they have done along the way.
+  function renderCard() {
+    const mins = Math.floor(S.stats.time / 60000), next = CM.nextRank(S.alphaWins, S.f.champion, S.champAt);
+    const line = (k, v) => `<div class="ware"><div><b>${k}</b></div><span>${v}</span></div>`;
+    $menu.className = '';
+    $menu.innerHTML = `${head('Trainer Card')}
+      <div class="forge"><div class="left"><canvas id="pprev" width="288" height="320"></canvas></div>
+      <div class="right">
+        <h2>${esc(S.player.name)} ${myTitle() ? `<small class="rank">★ ${myTitle()}</small>` : ''}</h2>
+        <p class="empty">${next ? `${next.left} more alpha win${next.left === 1 ? '' : 's'} to ${next.name}.` : 'Beat the Champion for the last title of all.'}</p>
+        ${line('Badges', `${badgeCount()} / ${TOTAL}`)}${line('Champion rank', `${myTitle() || 'Unranked'} · ${S.alphaWins || 0} alphas beaten`)}
+        ${line('Time played', `${Math.floor(mins / 60)} h ${mins % 60} min`)}${line('Battles won', S.stats.wins)}${line('Trainers beaten', S.stats.trainers)}
+        ${line('Creatadex', `${seenCount()} / ${CM.DEX.length}`)}${line('Shiny Creatamon beaten', S.stats.shinies)}${line('Steps walked', S.stats.steps)}
+        ${line('Coins', `${COIN}${S.money}`)}${line('Trophies', `${Object.keys(S.trophies).length} / ${TROPHIES.length}`)}${line('Days in a row', S.streak || 1)}
+      </div></div>`;
+    const g = $('pprev').getContext('2d');
+    g.setTransform(8, 0, 0, 8, 0, 0);
+    drawPerson(g, 2, 8, S.player, 'down');
+  }
+  function renderTrophies() {
+    $menu.className = '';
+    $menu.innerHTML = `${head(`Trophies · ${Object.keys(S.trophies).length}/${TROPHIES.length}`)}
+      <p class="empty">Each trophy pays ${COIN}${TROPHY_PRIZE} when you earn it.</p>
+      <div class="trophies">${TROPHIES.map(([id, icon, name, what]) => `<div class="trophy ${S.trophies[id] ? 'won' : ''}"><i>${S.trophies[id] ? icon : '🔒'}</i><div><b>${name}</b><small>${what}</small></div></div>`).join('')}</div>`;
   }
   function renderSprays() {
     $menu.className = '';
@@ -1507,6 +1667,16 @@
     : '<button disabled title="Not found yet">?</button>')).join('')}</div>`;
     $menu.querySelectorAll('[data-spraycv]').forEach((cv) => { const g = cv.getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0); drawSpray(g, cv.dataset.spraycv, 0, 0); });
   }
+  function renderOptions() {
+    const sw = (key, name, what) => `<div class="ware"><div><b>${name}</b> <small>${what}</small></div>
+      <button class="plain ${SFX.opts[key] ? 'on' : ''}" data-opt="${key}">${SFX.opts[key] ? 'On' : 'Off'}</button></div>`;
+    $menu.className = '';
+    $menu.innerHTML = `${head('Options')}
+      ${sw('sfx', 'Sound effects', 'Hits, pick-ups, menu clicks')}
+      ${sw('music', 'Music', 'A quiet tune while you explore and a livelier one in battle')}
+      ${sw('auto', 'Battle text moves on by itself', 'Off: press Enter after every battle message')}
+      <p class="empty">These are kept for this browser, not per save.</p>`;
+  }
   // A Creatastop: the basics, Power Cards of the town's element, and a rack of clothes.
   function renderShop() {
     const n = badgeCount(), can = (price) => (S.money >= price ? '' : 'disabled');
@@ -1516,7 +1686,7 @@
     const row = (kind, id, name, desc, price, have) => `<div class="ware"><div><b>${name}</b> <small>${desc}${have ? ` · you have ${have}` : ''}</small></div>
       <button class="plain" data-buy="${kind}:${id}" ${can(price)}>${COIN}${price}</button></div>`;
     $menu.className = '';
-    $menu.innerHTML = `<header><h2>Creatastop</h2><span><span class="purse dark">${COIN}${S.money}</span> <button data-a="close">Leave</button></span></header>
+    $menu.innerHTML = `<header><h2>${esc(shop.town)} Creatastop</h2><span><span class="purse dark">${COIN}${S.money}</span> <button data-a="close">Leave</button></span></header>
       <p class="empty">Welcome! Coins come from beating trainers. More goods arrive as you win badges.</p>
       <h3>Items</h3>${goods.map((id) => row('item', id, ITEMS[id].name, ITEMS[id].desc, ITEMS[id].price, S.items[id] || 0)).join('')}
       <h3>Power Cards · ${shop.el}</h3>${cards.map((id) => row('card', id, cardLabel(id), CM.cardDesc(CARDS[id]), CM.cardPrice(id), S.cards[id] || 0)).join('')}
@@ -1790,7 +1960,7 @@
   }
 
   $menu.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool],[data-w],[data-size],[data-spray],[data-page],[data-buy],[data-use],[data-store],[data-take],[data-dev]');
+    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool],[data-w],[data-size],[data-spray],[data-page],[data-buy],[data-use],[data-store],[data-take],[data-dev],[data-opt],[data-fly]');
     if (!b || b.disabled) return;
     const d = b.dataset;
     if (d.a === 'home' || d.page) {
@@ -1814,6 +1984,15 @@
       save();
       updateHud();
       return renderMenu();
+    }
+    if (d.opt) { SFX.set(d.opt, !SFX.opts[d.opt]); SFX.play('select'); return renderMenu(); }
+    if (d.fly) {
+      if (S.map !== 'world') return alert('You can only travel from outdoors. Step outside first.');
+      const [x, y] = d.fly.split(',').map(Number);
+      goTo('world', x, y, 'down');
+      S.heal = ['world', x, y];
+      alphas.length = 0;
+      return closeMenu();
     }
     if (d.dev) return devDo(d.dev, d.v);
     if (d.store) { S.storage.push(S.party.splice(+d.store, 1)[0]); save(); return renderMenu(); }
@@ -2014,8 +2193,9 @@
     };
     const fx = S.x + DIRS[S.dir][0], fy = S.y + DIRS[S.dir][1], facing = !move && npcAt(fx, fy);
     if (facing) pill(facing.name, ...at(fx, fy, 1.95), '#1d2437e6');
+    else if (S.map === 'world' && CM.STOP_AT[`${fx},${fy}`]) pill('Creatastop', ...at(fx, fy, 1.6), '#e8384fe6');
     // Stand still for a few seconds and your title shows over your head.
-    const rank = CM.title(S.alphaWins, S.f.champion);
+    const rank = myTitle();
     if (rank && mode === 'world' && performance.now() - idleSince > 3000) pill(`★ ${rank} ★`, ...at(S.x, S.y, 2.2), '#b8860bf0');
     alphas.forEach((a) => { if (a.chase) pill('!', ...at(a.px + (a.x - a.px) * a.t, a.py + (a.y - a.py) * a.t, 1.9), '#e8384ff0'); });
     const wp = waypoint();
@@ -2122,6 +2302,24 @@
   });
   addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
   addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+  // ---- Touch controls ----
+  // A direction pad and a few buttons, shown on touch screens while walking around. Everything else is already tappable.
+  const $pad = $('pad');
+  let touch = matchMedia('(pointer: coarse)').matches;
+  addEventListener('touchstart', () => { touch = true; }, { passive: true });
+  const letGo = () => $pad.querySelectorAll('[data-hold]').forEach((b) => { keys[b.dataset.hold] = false; b.classList.remove('down'); });
+  $pad.addEventListener('pointerdown', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    e.preventDefault();
+    if (b.dataset.tap) return void dispatchEvent(new KeyboardEvent('keydown', { key: b.dataset.tap }));
+    letGo();
+    keys[b.dataset.hold] = true;
+    b.classList.add('down');
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => $pad.addEventListener(ev, letGo));
+  $pad.addEventListener('contextmenu', (e) => e.preventDefault());
+
   $dialog.addEventListener('click', tryAdvance);
   $battle.addEventListener('click', tryAdvance);
   $hud.addEventListener('click', () => { if (mode === 'world') openMenu(); });
@@ -2130,7 +2328,9 @@
   function frame(time) {
     const dt = Math.min(50, time - last);
     last = time;
-    if (S && mode !== 'title') { update(dt); if ($battle.hidden && $menu.hidden) draw(time); }
+    if (S && mode !== 'title') { S.stats.time += dt; update(dt); if ($battle.hidden && $menu.hidden) draw(time); }
+    const pad = touch && mode === 'world' && $dialog.hidden;
+    if ($pad.hidden === pad) { $pad.hidden = !pad; if (!pad) letGo(); $game.classList.toggle('touch', touch); }
     requestAnimationFrame(frame);
   }
 
@@ -2151,6 +2351,7 @@
     if (MAPS[S.map].puzzle && !isDone(S.map)) [S.x, S.y] = MAPS[S.map].entry;
     $title.hidden = true;
     mode = 'world';
+    SFX.music('world');
     draw(0);
     if (!S.player) {
       // New game, or a save from before characters existed: pick a look first.
@@ -2158,6 +2359,7 @@
       $menu.hidden = false;
       openWardrobe(true);
     } else if (!S.f.start) intro();
+    dailyGift();
   }
 
   $('btnNew').onclick = () => {

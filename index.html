@@ -12,9 +12,14 @@
     <canvas id="overlay" width="1440" height="1056"></canvas>
     <div id="hud" title="Open the menu"><div class="row"><b id="area"></b><span id="coins"></span></div><div id="goal"></div></div>
     <div id="place"></div>
+    <div id="toast"></div>
     <canvas id="minimap" width="248" height="192"></canvas>
     <div id="keys">Enter: talk &nbsp;·&nbsp; M: menu &nbsp;·&nbsp; E: bag &nbsp;·&nbsp; Q: bike &nbsp;·&nbsp; G: spray</div>
 
+    <div id="pad" hidden>
+      <div class="dpad"><button data-hold="arrowup" class="u">▲</button><button data-hold="arrowleft" class="l">◀</button><button data-hold="arrowright" class="r">▶</button><button data-hold="arrowdown" class="d">▼</button></div>
+      <div class="acts"><button data-tap="m">☰</button><button data-tap="e">🎒</button><button data-tap="q">🚲</button><button data-tap="Enter" class="a">A</button></div>
+    </div>
     <div id="battle" hidden>
       <div class="info foe">
         <div><b id="foeName"></b> <span id="foeLv"></span></div>
@@ -44,6 +49,7 @@
       <button id="btnNew">New Game</button>
     </div>
   </div>
+  <script src="js/sfx.js"></script>
   <script src="js/core.js"></script>
   <script src="js/world.js"></script>
   <script src="js/draw.js"></script>
