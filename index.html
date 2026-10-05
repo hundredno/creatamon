@@ -10,7 +10,10 @@
   <div id="game">
     <canvas id="world" width="1440" height="1056"></canvas>
     <canvas id="overlay" width="1440" height="1056"></canvas>
-    <div id="hud"><b id="area"></b> &nbsp;·&nbsp; Arrows / WASD: move &nbsp;·&nbsp; Enter: interact &nbsp;·&nbsp; M: menu &nbsp;·&nbsp; E: inventory &nbsp;·&nbsp; G: spray</div>
+    <div id="hud" title="Open the menu"><div class="row"><b id="area"></b><span id="coins"></span></div><div id="goal"></div></div>
+    <div id="place"></div>
+    <canvas id="minimap" width="248" height="192"></canvas>
+    <div id="keys">Enter: talk &nbsp;·&nbsp; M: menu &nbsp;·&nbsp; E: bag &nbsp;·&nbsp; Q: bike &nbsp;·&nbsp; G: spray</div>
 
     <div id="battle" hidden>
       <div class="info foe">
@@ -36,7 +39,7 @@
 
     <div id="title">
       <h1>CREATAMON</h1>
-      <p>Forge your own creatures. Solve eleven gyms. Take the Champion Cup.</p>
+      <p>Forge your own creatures. Solve fourteen gyms. Take the Champion Cup.</p>
       <button id="btnContinue" hidden>Continue</button>
       <button id="btnNew">New Game</button>
     </div>

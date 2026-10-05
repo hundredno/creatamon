@@ -226,6 +226,9 @@ const stages = [
   ['nettie_thorn', () => { S.f.nettie2 = true; }],
   ['leader_Shadow', () => { S.badges.Shadow = true; }],
   ['leader_Mind', () => { S.badges.Mind = true; }],
+  ['leader_Robot', () => { S.badges.Robot = true; }],
+  ['leader_Light', () => { S.badges.Light = true; }],
+  ['leader_Toxic', () => { S.badges.Toxic = true; }],
   ['quiz1', () => { S.quiz = 5; }],
   ['leader_Normal', () => { S.badges.Normal = true; }],
   ['registrar', () => { S.f.semis = true; }],
@@ -238,7 +241,7 @@ const stages = [
 ];
 // The next few story beats must be out of reach until the current one is done.
 const LOCKED_AHEAD = ['leader_Grass', 'leader_Water', 'leader_Fire', 'leader_Wind', 'leader_Rock', 'leader_Electric', 'leader_Metal',
-  'leader_Ice', 'leader_Shadow', 'leader_Mind', 'leader_Normal', 'registrar', 'sterling'];
+  'leader_Ice', 'leader_Shadow', 'leader_Mind', 'leader_Robot', 'leader_Light', 'leader_Toxic', 'leader_Normal', 'registrar', 'sterling'];
 stages.forEach(([id, done, before], i) => {
   const met = stages.slice(0, i + 1).map((st) => st[0]);
   const later = stages.slice(i + 1).map((st) => st[0]).filter((n) => LOCKED_AHEAD.includes(n) && !met.includes(n));
@@ -271,7 +274,17 @@ CHESTS.forEach((c) => {
 });
 NPCS.filter((n) => n.team).forEach((n) => assert.ok(touch(end, n.map, n.x, n.y), `${n.name} unreachable`));
 // Every wild habitat appears somewhere with a level range.
-Object.keys(CM.WILD).filter((z) => z !== '5').forEach((z) => assert.ok(MAPS.world.rows.some((row, y) => [...row].some((ch, x) =>
+// Named wild lists belong to an area with levels, and name only real species.
+Object.keys(CM.WILD).filter((z) => !+z).forEach((z) => assert.ok(CM.AREAS.some((a) => a.wild === z && a.lv), `nowhere uses the wild list ${z}`));
+CM.AREAS.filter((a) => a.wild).forEach((a) => assert.ok(CM.WILD[a.wild], `${a.name}: unknown wild list`));
+// Every Creatastop can be walked up to, and sells clothes that exist.
+CM.STOPS.forEach((st) => {
+  const n = NPCS.find((p) => p.id === st.id);
+  assert.ok(touch(end, n.map, n.x, n.y), `${st.id} unreachable`);
+  st.clothes.forEach((id) => assert.ok(CM.CLOTHES[id].sold));
+});
+assert.strictEqual(CM.STOPS.flatMap((st) => st.clothes).length, Object.values(CM.CLOTHES).filter((c) => c.sold).length, 'every sold piece is stocked somewhere');
+Object.keys(CM.WILD).filter((z) => +z && z !== '5').forEach((z) => assert.ok(MAPS.world.rows.some((row, y) => [...row].some((ch, x) =>
   CM.ZONE_OF[ch] === +z && CM.areaAt('world', x, y).lv)), `habitat ${z} missing from the map`));
 
 console.log('core ok');

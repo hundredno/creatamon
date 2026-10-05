@@ -307,6 +307,29 @@
     'IIIIEIIII',
   ], { puzzle: 'quiz', hint: 'Gym challenge: five gatekeepers test what you know. Answer wrong and you must battle before trying again.' });
 
+  // The three gyms of the far east reuse earlier kinds of challenge on fresh floors.
+  const flip = { '<': '>', '>': '<' };
+  const mirror = (rows) => rows.map((row) => [...row].reverse().map((ch) => flip[ch] || ch).join(''));
+  interior('gym_Robot', 'Cogsworth Gym', mirror(MAPS.gym_Wind.rows),
+    { puzzle: 'gusts', hint: 'Gym challenge: the factory floor is all conveyor belts. Step on one and it carries you wherever it points. Ride them to the far door.' });
+  interior('gym_Light', 'Solhaven Gym', [
+    'IIIIIIIII',
+    'IFFFLFFFI',
+    'IFFFFFFFI',
+    'IIIIgIIII',
+    'IFFFFFFFI',
+    'IIzzzzzzI',
+    'IzzzzzzzI',
+    'IzzzzzzzI',
+    'IzzzzzzzI',
+    'IzzzzzzzI',
+    'IFFFFFFFI',
+    'IHFFFFFFI',
+    'IIIIEIIII',
+  ], { puzzle: 'panels', hint: 'Gym challenge: light every floor lamp by stepping on it once. Step on a lit lamp and they all go dark again.' });
+  interior('gym_Toxic', 'Mirefen Gym', mirror(MAPS.gym_Rock.rows),
+    { puzzle: 'pits', hint: 'Gym challenge: three sludge pits block the way. Push boulders into them to make a path. A boulder against a wall is stuck for good.' });
+
   interior('grove', 'Drowsing Grove', [
     '#############',
     '#####...#####',
@@ -342,7 +365,8 @@
   const g = Array.from({ length: H }, () => Array(W).fill('#'));
   const rect = (x0, y0, x1, y1, ch) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = ch; };
   const set = (x, y, ch) => { g[y][x] = ch; };
-  const area = (name, x0, y0, x1, y1, lv, drops) => AREAS.push({ name, x0, y0, x1, y1, lv, drops });
+  // wild: a named list of wild Creatamon that replaces the usual ones for the ground underfoot.
+  const area = (name, x0, y0, x1, y1, lv, drops, wild) => AREAS.push({ name, x0, y0, x1, y1, lv, drops, wild });
   const house = (x, y, w = 4) => { rect(x, y, x + w - 1, y + 1, 'R'); rect(x, y + 2, x + w - 1, y + 2, 'W'); };
   // A five-wide hall in an element's colours. With `to`, its door leads to that map.
   const hall = (x, y, tint, to, need, w = 5) => {
@@ -353,7 +377,7 @@
     WARPS[`world:${x + 2},${y + 2}`] = { map: to, need };
     MAPS[to].out = ['world', x + 2, y + 3];
   };
-  const GYM_ORDER = ['Grass', 'Water', 'Fire', 'Wind', 'Rock', 'Electric', 'Metal', 'Ice', 'Shadow', 'Mind', 'Normal'];
+  const GYM_ORDER = ['Grass', 'Water', 'Fire', 'Wind', 'Rock', 'Electric', 'Metal', 'Ice', 'Shadow', 'Mind', 'Robot', 'Light', 'Toxic', 'Normal'];
   const gymHall = (x, y, el) => {
     const n = GYM_ORDER.indexOf(el);
     hall(x, y, el, `gym_${el}`, (S) => (badgeCount(S) >= n ? null
@@ -470,9 +494,31 @@
   // Route 10 and Summit City
   rect(70, 52, 74, 78, '.'); rect(70, 58, 74, 74, 's'); rect(70, 53, 71, 56, ','); rect(73, 60, 74, 66, '"'); rect(70, 68, 71, 72, '"');
   set(72, 79, 'c');
-  area('Route 10', 70, 52, 74, 79, [50, 54], [10, 50, 40]);
+  area('Route 10', 70, 52, 74, 79, [58, 62], [10, 50, 40]);
   rect(64, 80, 97, 94, 'c'); hall(77, 81, 'League', null, null, 7); hall(90, 81, 'Plant'); house(65, 82); house(86, 89); set(70, 88, 'H');
   area('Summit City', 64, 80, 97, 94);
+
+  // ---------- The far east: Cogsworth, Solhaven and Mirefen ----------
+  // Route 15 runs south out of Reverie.
+  set(117, 21, 'c'); rect(113, 22, 121, 24, 's'); rect(113, 25, 121, 33, '.');
+  rect(115, 24, 121, 24, 'T'); rect(113, 28, 119, 28, '#'); rect(115, 31, 121, 31, '#');
+  rect(114, 26, 119, 27, ','); rect(115, 29, 120, 30, ':'); rect(114, 32, 119, 33, ','); set(117, 34, '.');
+  area('Route 15', 113, 21, 121, 34, [47, 50], [12, 53, 35], 'east1');
+  rect(106, 35, 122, 47, 'c'); gymHall(108, 36, 'Robot'); house(116, 36); house(107, 43); set(118, 42, 'H'); set(114, 48, 'c');
+  area('Cogsworth', 106, 35, 122, 48);
+  // Route 16
+  rect(110, 49, 118, 57, '.'); rect(110, 51, 116, 51, '#'); rect(112, 54, 118, 54, '#');
+  rect(111, 49, 113, 50, '*'); rect(111, 52, 117, 53, ','); rect(113, 55, 117, 56, '*'); set(114, 58, 'S');
+  area('Route 16', 110, 49, 118, 58, [49, 52], [12, 50, 38], 'east2');
+  rect(104, 59, 122, 70, 'S'); gymHall(109, 60, 'Light'); house(117, 60); house(105, 65); set(118, 66, 'H'); rect(98, 68, 103, 68, 'S'); set(113, 71, '.');
+  area('Solhaven', 98, 59, 122, 70);
+  // Route 17, down into the fen
+  rect(109, 72, 117, 78, '.'); rect(109, 74, 115, 74, '#'); rect(111, 76, 117, 76, '#');
+  rect(110, 72, 112, 73, ';'); rect(110, 75, 116, 75, ';'); rect(112, 77, 116, 78, ';');
+  area('Route 17', 109, 71, 117, 78, [51, 54], [10, 50, 40], 'east3');
+  rect(100, 79, 122, 91, '.'); rect(101, 88, 105, 90, '~'); rect(116, 80, 120, 82, '~'); rect(112, 86, 121, 90, ';');
+  gymHall(105, 80, 'Toxic'); house(110, 84); set(108, 87, 'H'); rect(98, 86, 99, 86, 'c');
+  area('Mirefen', 98, 79, 122, 91, [52, 55], [10, 50, 40], 'east3');
 
   // ---------- Winding roads ----------
   // Hedges, ridges and thickets laid across the routes so that each one doubles back on itself.
@@ -544,6 +590,9 @@
   chest(122, 20, 'creataball'); chest(112, 20, 'spray:crown'); chest(74, 77, 'max_potion'); chest(64, 94, 'revive'); chest(97, 80, 'spray:swirl');
   chest(24, 56, 'revive'); chest(10, 49, 'potion'); chest(4, 80, 'gust'); chest(55, 6, 'iron_bash'); chest(122, 4, 'psy_wave');
   chest(4, 2, 'spray:wolf', 'grove');
+  chest(121, 22, 'hp250'); chest(121, 33, 'gear_toss'); chest(122, 47, 'max_potion'); chest(106, 47, 'creataball'); chest(118, 49, 'glint');
+  chest(110, 57, 'hp250'); chest(104, 59, 'revive'); chest(122, 70, 'hp250'); chest(117, 72, 'sludge_flick'); chest(109, 78, 'max_potion');
+  chest(122, 91, 'hp250'); chest(100, 79, 'creataball'); chest(121, 79, 'hp250');
   chest(3, 12, 'pirate'); chest(118, 20, 'halo'); chest(96, 60, 'cat_ears');
 
   // ---------- People ----------
@@ -568,23 +617,23 @@
     finn1: [['Fluffin', 1], ['Sproutle', 2]],
     finn2: [['Fluffin', 4], ['Chirple', 4], ['Sproutle', 5]],
     finn3: [['Fluffalo', 37], ['Skylord', 37], ['Thornback', 38], ['Stormkite', 38]],
-    finn4: [['Fluffalo', 54], ['Skylord', 54], ['Thornback', 54], ['Stormkite', 55], ['Tidewyrm', 55]],
+    finn4: [['Fluffalo', 62], ['Skylord', 62], ['Thornback', 62], ['Stormkite', 63], ['Tidewyrm', 63]],
     cyril1: [['Frostfinch', 9], ['Dreamote', 9], ['Voltmite', 10]],
     cyril2: [['Frostfinch', 26], ['Mesmoth', 26], ['Prismite', 27], ['Voidling', 27]],
-    cyril3: [['Frostmaw', 55], ['Oraclynx', 55], ['Prismite', 56], ['Glacierback', 56]],
+    cyril3: [['Frostmaw', 63], ['Oraclynx', 63], ['Prismite', 64], ['Glacierback', 64]],
     nettie1: [['Gloomoth', 16], ['Echobat', 16], ['Duskfang', 17]],
     nettie2: [['Echobat', 42], ['Nightshade', 42], ['Duskfang', 43], ['Umbrawyrm', 43]],
-    nettie3: [['Echobat', 53], ['Nightshade', 53], ['Duskfang', 54], ['Umbrawyrm', 54]],
+    nettie3: [['Echobat', 61], ['Nightshade', 61], ['Duskfang', 62], ['Umbrawyrm', 62]],
     holler: [['Gloomoth', 40], ['Duskfang', 41]],
-    opaline: [['Glimmershell', 55], ['Stormcrow', 55], ['Ironclaw', 56], ['Leviadon', 56]],
-    marina2: [['Dewsnake', 55], ['Rivermaw', 55], ['Tidewyrm', 56], ['Leviadon', 56]],
-    gneiss2: [['Stoneviper', 56], ['Shardwing', 56], ['Boulderon', 57], ['Ironhide', 57]],
-    brann2: [['Grizzlord', 57], ['Skylord', 57], ['Fluffalo', 57], ['Regalion', 58]],
-    sterling: [['Cogshell', 59], ['Ironclaw', 59], ['Cavernking', 60], ['Anviltusk', 60], ['Ironhide', 61]],
-    eternox1: [['Eternox', 62]],
-    eternox2: [['Eternox', 65]],
-    vex: [['Stormcrow', 63], ['Nightshade', 63], ['Magmaw', 64], ['Leviadon', 64], ['Glacierback', 64], ['Pyreking', 66]],
-    quiz: [['Antlerox', 48], ['Skylord', 48]],
+    opaline: [['Glimmershell', 63], ['Stormcrow', 63], ['Ironclaw', 64], ['Leviadon', 64]],
+    marina2: [['Dewsnake', 63], ['Rivermaw', 63], ['Tidewyrm', 64], ['Leviadon', 64]],
+    gneiss2: [['Stoneviper', 64], ['Shardwing', 64], ['Boulderon', 65], ['Ironhide', 65]],
+    brann2: [['Grizzlord', 65], ['Skylord', 65], ['Fluffalo', 65], ['Regalion', 66]],
+    sterling: [['Cogshell', 67], ['Ironclaw', 67], ['Cavernking', 68], ['Anviltusk', 68], ['Ironhide', 69]],
+    eternox1: [['Eternox', 70]],
+    eternox2: [['Eternox', 73]],
+    vex: [['Stormcrow', 71], ['Nightshade', 71], ['Magmaw', 72], ['Leviadon', 72], ['Glacierback', 72], ['Pyreking', 74]],
+    quiz: [['Antlerox', 54], ['Skylord', 54]],
   };
 
   // Trainers nickname their Creatamon and draw their own looks for them.
@@ -634,7 +683,16 @@
     { el: 'Mind', town: 'Reverie', name: 'Leader Sibyl', team: [['Dreamote', 46], ['Thinkling', 46], ['Mesmoth', 47], ['Oraclynx', 48]], reward: ['mind_break', 'hp250'],
       look: { hair: '#f29ad0', hairStyle: 'pigtails', hat: 'halo', top: 'kimono', topColor: '#9b3fd6', bottom: 'long_skirt', bottomColor: '#5b3fa8' },
       pre: 'I knew you would find the right pads. I did not foresee how this ends. How exciting!', post: 'So that is how it ends. The Mind Badge is yours.' },
-    { el: 'Normal', town: 'Anvilgate', name: 'Leader Brann', team: [['Antlerox', 50], ['Skylord', 51], ['Fluffalo', 51], ['Grizzlord', 51], ['Regalion', 52]], reward: ['hyper_burst', 'hp250'],
+    { el: 'Robot', town: 'Cogsworth', name: 'Leader Axle', team: [['Gearling', 48], ['Dronefly', 49], ['Servopup', 49], ['Mechadon', 50]], reward: ['overclock', 'hp250'],
+      look: { skin: '#d9a066', hair: '#5fd0c5', hairStyle: 'mohawk', hat: 'goggles', top: 'overalls', topColor: '#1f6f68', bottomColor: '#2c2c3c' },
+      pre: 'You rode my conveyors without losing a bolt. Let us see how you handle the machines themselves!', post: 'Does not compute... in the best way. The Robot Badge is yours.' },
+    { el: 'Light', town: 'Solhaven', name: 'Leader Aurelia', team: [['Glimmerbug', 50], ['Sunpup', 51], ['Halowing', 51], ['Solarion', 52]], reward: ['supernova', 'hp250'],
+      look: { skin: '#fbe0c8', hair: '#f6d643', hairStyle: 'long', hat: 'tiara', top: 'dress', topColor: '#fff3a8' },
+      pre: 'Every lamp lit, and not one twice. You shine! But can you stand the glare?', post: 'Outshone at last. Take the Light Badge, and keep it polished.' },
+    { el: 'Toxic', town: 'Mirefen', name: 'Leader Brack', team: [['Sludgel', 52], ['Venomite', 53], ['Toxitoad', 53], ['Miasmander', 54]], reward: ['toxic_tide', 'hp250'],
+      look: { skin: '#a86b3c', hair: '#56751a', hairStyle: 'curly', hat: 'bandana', hatColor: '#56751a', top: 'hoodie', topColor: '#56751a', bottomColor: '#3a2412' },
+      pre: 'Plugged my pits, did you? The fen has plenty more nasty surprises.', post: 'Bleh. Cleaned out. The Toxic Badge. Mind the smell.' },
+    { el: 'Normal', town: 'Anvilgate', name: 'Leader Brann', team: [['Antlerox', 56], ['Skylord', 57], ['Fluffalo', 57], ['Grizzlord', 57], ['Regalion', 58]], reward: ['hyper_burst', 'hp250'],
       look: { skin: '#a86b3c', hair: '#1c1c28', hat: 'cap', hatColor: '#f47a45', top: 'hoodie', topColor: '#1f5f9e', bottom: 'shorts', bottomColor: '#2c2c3c' },
       pre: 'Only the Champion has ever beaten me. No tricks, no weakness to lean on. Just strength!', post: 'Ha! Finally someone worth losing to. The last badge is yours. Go and claim the Cup.' },
   ];
@@ -699,6 +757,19 @@
   person('sterling', 'plant', 4, 4, 'Chairman Sterling', LOOKS.sterling, { show: (S) => !f(S).sterling });
   person('eternox', 'plant', 4, 1, 'Eternox', null, { kind: 'boss', show: (S) => !f(S).dawn });
 
+  // The far east. A guard with a `line` simply says it and stays put.
+  const n13 = GYM_ORDER.indexOf('Toxic') + 1;
+  person('guard_east', 'world', 117, 21, 'League Staff', LOOKS.staff, { show: (S) => !S.badges.Mind,
+    line: 'League Staff: The road south to Cogsworth is for challengers holding the Mind Badge.' });
+  person('guard_r16', 'world', 114, 48, 'League Staff', LOOKS.staff, { show: (S) => !S.badges.Robot,
+    line: 'League Staff: Solhaven is that way, once you have beaten Leader Axle here in Cogsworth.' });
+  person('guard_r17', 'world', 113, 71, 'League Staff', LOOKS.staff, { show: (S) => !S.badges.Light,
+    line: 'League Staff: The fen road is dangerous. Win the Light Badge and I will let you down it.' });
+  person('guard_lumen', 'world', 99, 68, 'League Staff', LOOKS.staff, { show: (S) => badgeCount(S) < n13,
+    line: 'League Staff: This is the short cut between Solhaven and Lumenlea. It opens to holders of the Toxic Badge.' });
+  person('guard_fen', 'world', 98, 86, 'League Staff', LOOKS.staff, { show: (S) => badgeCount(S) < GYM_ORDER.length,
+    line: 'League Staff: Summit City is through here, for those with every badge in Galdra.' });
+
   // Trainers along the way. They only battle if you talk to them.
   const trainer = (id, x, y, name, look, team, pre, post, reward, outfit) =>
     person(id, 'world', x, y, name, look, { team, pre, post, reward, outfit });
@@ -730,9 +801,9 @@
   trainer('angler', 79, 14, 'Angler Brook', { hair: '#3a2412', hat: 'straw_hat', topColor: '#55a8ee', bottom: 'shorts', bottomColor: '#8a5a2b' },
     [['Gullwave', 40], ['Rivermaw', 41], ['Tidewyrm', 41]], 'The river only lets strong swimmers cross. Are yours?', 'Go on, then. Thornmuth is on the far bank.', ['hp250']);
   trainer('ace1', 73, 55, 'Ace Trainer Vale', { hair: '#55a8ee', hairStyle: 'spiky', top: 'varsity', topColor: '#9b3fd6', bottomColor: '#2c2c3c' },
-    [['Cavernking', 51], ['Stormcrow', 51], ['Glacierback', 52]], 'Eight badges? Me too. Only one of us reaches the Cup.', 'It is you. Go.', ['hp250', 'solar_bloom']);
+    [['Cavernking', 59], ['Stormcrow', 59], ['Glacierback', 60]], 'Every badge? Me too. Only one of us reaches the Cup.', 'It is you. Go.', ['hp250', 'solar_bloom']);
   trainer('ace2', 71, 75, 'Ace Trainer Wynn', { skin: '#6e4424', hair: '#1c1c28', hairStyle: 'long', top: 'varsity', topColor: '#e0483c', bottomColor: '#2c2c3c' },
-    [['Umbrawyrm', 53], ['Magmaw', 53], ['Leviadon', 53]], 'Summit City is just ahead. Last chance to turn back!', 'No turning back for you, then.', ['hp250', 'tsunami_blast']);
+    [['Umbrawyrm', 61], ['Magmaw', 61], ['Leviadon', 61]], 'Summit City is just ahead. Last chance to turn back!', 'No turning back for you, then.', ['hp250', 'tsunami_blast']);
 
   trainer('kite', 13, 57, 'Kite Flyer Wim', { hair: '#f3e2a0', hairStyle: 'ponytail', top: 'tank', topColor: '#55a8ee', bottom: 'shorts', bottomColor: '#f4f4f4' },
     [['Breezlet', 20], ['Zephyrfox', 21]], 'The steppe wind carries my Creatamon. Can yours keep up?', 'Blown away!', ['gust', 'hp100']);
@@ -740,6 +811,13 @@
     [['Cogshell', 32], ['Ironclaw', 33]], 'Fresh off the anvil! Want to test their temper?', 'You have got mettle.', ['rivet_toss', 'hp250']);
   trainer('seer', 105, 15, 'Seer Ombra', { hair: '#f29ad0', hairStyle: 'curly', hat: 'flower_crown', top: 'kimono', topColor: '#9b3fd6', bottom: 'long_skirt', bottomColor: '#5b3fa8' },
     [['Thinkling', 44], ['Mesmoth', 45], ['Oraclynx', 45]], 'I dreamed you would lose. Shall we check?', 'My dreams are not what they were.', ['psy_wave', 'hp250']);
+
+  trainer('tinker', 116, 29, 'Tinkerer Jib', { hair: '#5fd0c5', hairStyle: 'bun', hat: 'goggles', top: 'overalls', topColor: '#f5b942', bottomColor: '#2c2c3c' },
+    [['Gearling', 48], ['Dronefly', 48], ['Servopup', 49]], 'Beep boop! That is robot for "battle me".', 'Powering down...', ['laser_beam', 'hp250']);
+  trainer('sunny', 114, 53, 'Sunbather Sol', { skin: '#b97d48', hair: '#f6d643', hairStyle: 'ponytail', hat: 'visor', hatColor: '#fff3a8', top: 'tank', topColor: '#f47a45', bottom: 'shorts', bottomColor: '#55a8ee' },
+    [['Sunpup', 50], ['Halowing', 51]], 'You are standing in my light!', 'Fine, fine. Plenty of sun for both of us.', ['sunbeam', 'hp250']);
+  trainer('bogger', 113, 77, 'Bog Wader Fenn', { hair: '#56751a', hairStyle: 'short', hat: 'bucket', hatColor: '#56751a', top: 'puffer', topColor: '#8a5a2b', bottomColor: '#3a2412' },
+    [['Sludgel', 52], ['Venomite', 52], ['Toxitoad', 53]], 'Mind the mud. And mind ME.', 'Stuck in the mud, I am.', ['venom_fang', 'hp250']);
 
   // Trainers who stand in the road. They must be beaten to get past, and then move on.
   // need(S): a reason they will not battle yet (and so will not move), or null.
@@ -761,10 +839,28 @@
   blocker('b7', 111, 10, 'Dreamer Quill', { hair: '#b58cf0', hairStyle: 'afro', hat: 'headphones', hatColor: '#f29ad0', top: 'polka', topColor: '#9b3fd6', bottom: 'leggings', bottomColor: '#2c2c3c' },
     [['Oraclynx', 45], ['Mesmoth', 45]], 'Is this a dream? Battle me and we will find out.', 'Ouch. Awake, then. Reverie is right here.');
   blocker('b8', 72, 79, 'Cup Hopeful Rey', { skin: '#6e4424', hair: '#e0483c', hairStyle: 'afro', top: 'jersey', topColor: '#e0483c', bottom: 'joggers', bottomColor: '#2c2c3c' },
-    [['Anviltusk', 52], ['Pyreking', 52], ['Oraclynx', 53]], 'One of us walks into Summit City. I trained all year for this!', 'All year, and it is you. Win it for both of us.');
+    [['Anviltusk', 60], ['Pyreking', 60], ['Oraclynx', 61]], 'One of us walks into Summit City. I trained all year for this!', 'All year, and it is you. Win it for both of us.');
+
+  blocker('b9', 117, 34, 'Line Worker Rivet', { skin: '#6e4424', hair: '#1c1c28', hat: 'miner_helmet', top: 'overalls', topColor: '#1f6f68', bottomColor: '#2c2c3c' },
+    [['Servopup', 49], ['Mechadon', 49]], 'Cogsworth runs on schedule, and you are not on it. Battle first!', 'Clocked out. In you go.');
+  blocker('b10', 114, 58, 'Lamp Keeper Ray', { hair: '#f4f4f4', hairStyle: 'bob', hat: 'tophat', hatColor: '#b8962a', top: 'suit', topColor: '#fff3a8', bottomColor: '#b8962a' },
+    [['Halowing', 51], ['Solarion', 51]], 'Solhaven never goes dark, and nobody dims it on my watch!', 'Brilliant. Go on through.');
+  blocker('b11', 113, 78, 'Fen Guide Moss', { skin: '#d9a066', hair: '#3a2412', hairStyle: 'long', hat: 'straw_hat', top: 'poncho', topColor: '#56751a', bottom: 'long_skirt', bottomColor: '#3a2412' },
+    [['Toxitoad', 53], ['Miasmander', 53]], 'One wrong step in Mirefen and you sink. Prove you can keep your feet!', 'Sure-footed. The town is just ahead.');
+
+  // ---------- Creatastops ----------
+  // A shop stall in every town past the first. Each sells the basics, cards of its own element, and its share of the clothes.
+  const STOPS = [];
+  const wares = Object.keys(CM.CLOTHES).filter((id) => CM.CLOTHES[id].sold);
+  [[58, 92, 'Normal'], [35, 52, 'Fire'], [20, 28, 'Grass'], [16, 10, 'Water'], [16, 76, 'Wind'], [64, 46, 'Normal'], [88, 35, 'Rock'], [94, 70, 'Electric'],
+    [51, 16, 'Metal'], [68, 16, 'Ice'], [95, 16, 'Shadow'], [118, 16, 'Mind'], [120, 42, 'Robot'], [120, 66, 'Light'], [106, 87, 'Toxic'], [72, 88, 'Normal']].forEach(([x, y, el], i, all) => {
+    const stop = { id: `stop${i}`, el, clothes: wares.filter((_, k) => k % all.length === i) };
+    STOPS.push(stop);
+    person(stop.id, 'world', x, y, 'Creatastop', null, { kind: 'stop', stop });
+  });
 
   Object.assign(CM, {
-    MAPS, WARPS, TINT, AREAS, CHESTS, NPCS, GYMS, TEAMS, LOOKS, START, DIRS, GATE, GYM_ORDER, NICKS, makeTeam, gymDoor,
+    STOPS, MAPS, WARPS, TINT, AREAS, CHESTS, NPCS, GYMS, TEAMS, LOOKS, START, DIRS, GATE, GYM_ORDER, NICKS, makeTeam, gymDoor,
     badgeCount, charAt, gateOpen, passable, groundAt, areaAt, initPuzzle, checkSolved, step, arrive, toggleFire, teleAt, GUSTS,
   });
 })(typeof module !== 'undefined' ? require('./core.js') : CM);

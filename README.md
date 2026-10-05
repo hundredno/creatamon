@@ -1,7 +1,7 @@
 # Creatamon
 
 A creature-battling RPG where you don't catch your team, you **create** it.
-Find **Power Cards**, slot them into a Creatamon at the Forge, earn eleven gym badges and take the Champion Cup.
+Find **Power Cards**, slot them into a Creatamon at the Forge, earn fourteen gym badges and take the Champion Cup.
 
 ## Play
 
@@ -12,7 +12,8 @@ Open `index.html` in a browser. No build step, no dependencies. Progress saves a
 | Arrows / WASD | Move |
 | Enter / Space | Interact, advance text, use a field move on the thing you face |
 | E | Inventory: your items and unused Power Cards |
-| M / Esc | Menu: next objective, badges, party, Forge, Wardrobe, Creatadex |
+| Q | Hop on or off your bike (outdoors, once you have it) |
+| M / Esc | Menu: a grid of tiles for next objective, badges, party, Forge, Wardrobe, Creatadex |
 | R | Start a gym challenge over |
 | G | Spray your chosen design on the ground ahead |
 | 1-9 | Pick a battle option |
@@ -36,24 +37,48 @@ There is one gym per element, and each has a challenge to solve before its Leade
 | 8 | Ice | Frosthollow | Slide across sheer ice |
 | 9 | Shadow | Thornmuth | Find five seals in the dark |
 | 10 | Mind | Reverie | Warp pads between doorless rooms |
-| 11 | Normal | Anvilgate | Five gatekeepers' type-chart questions |
+| 11 | Robot | Cogsworth | Conveyor belts that carry you along |
+| 12 | Light | Solhaven | Light every floor lamp exactly once |
+| 13 | Toxic | Mirefen | Push boulders into three sludge pits |
+| 14 | Normal | Anvilgate | Five gatekeepers' type-chart questions |
 
 Some roads are held by trainers who must be beaten to pass, and the road on from each gym town stays shut until its badge
-is won. All eleven badges open the road to Summit City and the Champion Cup.
+is won. All fourteen badges open the road to Summit City and the Champion Cup.
 
 **Finding the gyms**: every gym hall has a roof in its element's colour with a white roundel over the door, and a pair of
 banners outside whose beacons pulse until you hold that badge. Once the challenge begins, the bar at the top of the screen
 points to the next gym and counts the steps to its door.
 
-**Level limit**: a Creatamon cannot grow past a level limit that rises with each badge (11 at the start, 68 with all
-eleven), so no Leader can simply be out-levelled. The routes wind back and forth between hedges and ridges; expect a walk.
+**Level limit**: a Creatamon cannot grow past a level limit that rises with each badge (11 at the start, 76 with all
+fourteen), so no Leader can simply be out-levelled. The routes wind back and forth between hedges and ridges; expect a walk.
 
 **Max Mode**: in a gym or a Champion Cup match you can, once per battle, make your Creatamon grow enormous. It gains half
 again its health and its attacks become never-miss Max moves until it faints, is switched out or the battle ends.
 Leaders and Cup opponents do the same with their last Creatamon. (One secret Creatamon can use it in any battle.)
 
+**The bike**: Champion Vex gives you a bike with his endorsement. Press Q outdoors to ride at twice walking speed.
+After the Ice gym Wren fits it with floats, and from then on it rides straight onto rivers, lakes and the sea.
+
 **Field moves** work outside battle. Face the obstacle and press Enter, and a Creatamon that knows the move is summoned:
 *Rock Smash* breaks cracked rocks, *Surf* carries you across rivers, lakes and the sea.
+
+## Finding your way
+
+- The bar at the top left shows where you are, your badges and coins, and **your next objective**.
+- A **red arrow** points the way to it. When the goal is on screen the arrow hangs over it; otherwise it sits at the edge
+  of the screen with the number of steps left.
+- Face anyone and their **name** appears over their head. Walking into a new place announces its name.
+- The **minimap** in the bottom right corner fills in as you explore; the Town Map in the menu shows everything you have seen.
+
+## Coins, Creatastops and Storage
+
+- Beating a trainer pays **coins** (◎); Gym Leaders pay triple.
+- Most towns have a **Creatastop**, a stall with a striped awning. Face it and press Enter to buy potions, Creataballs,
+  Power Cards of that town's element, and clothes. More goods appear as you win badges.
+- There are 126 pieces of clothing. The Wardrobe only lists the ones you own; the rest come from Creatastops (each town
+  stocks different ones), sparkles and trainers.
+- Your party holds **six** Creatamon. Forge a seventh and it goes to **Storage**, where it can be swapped in from the menu.
+- Potions and Revives can be used straight from the Bag (press E), as well as in battle.
 
 ## Creataballs, evolution and items
 
@@ -101,8 +126,9 @@ The menu's Creatadex tracks every species you have met.
 - `js/core.js` holds cards, species and battle rules, with no DOM
 - `js/world.js` holds the map, gym interiors, puzzle rules, people and teams, with no DOM
 - `js/draw.js` draws tiles, people, creatures and attack animations
-- `js/gl.js` renders the overworld in 3D with WebGL: the tile art laid flat, walls and buildings raised as blocks,
-  with pitched roofs, block-built trees and people standing upright. Without WebGL the game falls back to the flat view
+- `js/gl.js` renders the overworld in 3D with WebGL: the tile art laid flat and filtered smooth, walls and buildings raised
+  as blocks with pitched roofs, low-poly rounded trees, people standing upright with depth, warm and cool sunlight,
+  soft cast shadows and distance haze. Without WebGL the game falls back to the flat view
 - `js/game.js` holds the overworld, story, battles, menu, wardrobe and Forge
 - `node test/core.test.js` checks the rules, solves every gym puzzle by search, and walks the story from start
   to Champion to prove every step is reachable in order

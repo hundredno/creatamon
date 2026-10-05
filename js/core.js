@@ -12,19 +12,24 @@ const CM = (() => {
     Wind: { color: '#b4e6c6', dark: '#4a9474' },
     Metal: { color: '#b9c0cc', dark: '#566070' },
     Mind: { color: '#f29ad0', dark: '#9c3a78' },
+    Robot: { color: '#5fd0c5', dark: '#1f6f68' },
+    Light: { color: '#fbf0b0', dark: '#b8962a' },
+    Toxic: { color: '#a8d93f', dark: '#56751a' },
     // Not selectable in the Forge; only the secret cards use it.
     Cursed: { color: '#9b3fd6', dark: '#3d0f5e', hidden: true },
   };
   const STRONG = {
-    Normal: [], Fire: ['Grass', 'Ice', 'Metal'], Water: ['Fire', 'Rock'], Grass: ['Water', 'Rock'],
-    Electric: ['Water', 'Shadow', 'Wind'], Rock: ['Fire', 'Electric', 'Ice'], Ice: ['Grass', 'Wind'],
-    Shadow: ['Shadow', 'Normal', 'Mind'], Wind: ['Grass', 'Fire'], Metal: ['Ice', 'Rock'], Mind: ['Normal', 'Wind'], Cursed: [],
+    Normal: [], Fire: ['Grass', 'Ice', 'Metal'], Water: ['Fire', 'Rock', 'Robot'], Grass: ['Water', 'Rock', 'Light'],
+    Electric: ['Water', 'Shadow', 'Wind', 'Robot'], Rock: ['Fire', 'Electric', 'Ice'], Ice: ['Grass', 'Wind'],
+    Shadow: ['Shadow', 'Normal', 'Mind'], Wind: ['Grass', 'Fire'], Metal: ['Ice', 'Rock'], Mind: ['Normal', 'Wind', 'Toxic'],
+    Robot: ['Ice', 'Wind', 'Toxic'], Light: ['Shadow', 'Ice', 'Mind'], Toxic: ['Grass', 'Water', 'Normal'], Cursed: [],
   };
   const WEAK = {
     Normal: ['Shadow', 'Metal'], Fire: ['Fire', 'Water', 'Rock'], Water: ['Water', 'Grass'], Grass: ['Grass', 'Fire', 'Metal'],
     Electric: ['Electric', 'Grass', 'Rock'], Rock: ['Rock', 'Grass', 'Metal'], Ice: ['Ice', 'Fire', 'Water', 'Metal'],
     Shadow: ['Rock'], Wind: ['Wind', 'Rock', 'Metal'], Metal: ['Metal', 'Fire', 'Water', 'Electric'],
-    Mind: ['Mind', 'Shadow', 'Metal'], Cursed: [],
+    Mind: ['Mind', 'Shadow', 'Metal'], Robot: ['Robot', 'Metal', 'Rock'], Light: ['Light', 'Grass', 'Metal'],
+    Toxic: ['Toxic', 'Rock', 'Metal', 'Robot'], Cursed: [],
   };
   const effectiveness = (att, def) => (STRONG[att].includes(def) ? 2 : WEAK[att].includes(def) ? 0.5 : 1);
 
@@ -54,6 +59,9 @@ const CM = (() => {
     gust: mv('Gust', 1, 'Wind', 40),
     rivet_toss: mv('Rivet Toss', 1, 'Metal', 40),
     brain_poke: mv('Brain Poke', 1, 'Mind', 40),
+    gear_toss: mv('Gear Toss', 1, 'Robot', 40),
+    glint: mv('Glint', 1, 'Light', 40),
+    sludge_flick: mv('Sludge Flick', 1, 'Toxic', 40),
     hp30: hp('Vitality Shard', 1, 30),
     // Mid range
     flame_wheel: mv('Flame Wheel', 2, 'Fire', 65),
@@ -66,6 +74,9 @@ const CM = (() => {
     whirlwind: mv('Whirlwind', 2, 'Wind', 65),
     iron_bash: mv('Iron Bash', 2, 'Metal', 70, 90),
     psy_wave: mv('Psy Wave', 2, 'Mind', 65),
+    laser_beam: mv('Laser Beam', 2, 'Robot', 65),
+    sunbeam: mv('Sunbeam', 2, 'Light', 65),
+    venom_fang: mv('Venom Fang', 2, 'Toxic', 65),
     body_slam: mv('Body Slam', 2, 'Normal', 70),
     mend: { kind: 'move', name: 'Mend', tier: 2, element: 'Normal', power: 0, acc: 100, heal: 0.5 },
     hp100: hp('Vitality Core', 2, 100),
@@ -83,6 +94,9 @@ const CM = (() => {
     hurricane: mv('Hurricane', 3, 'Wind', 110, 85),
     titan_hammer: mv('Titan Hammer', 3, 'Metal', 110, 85),
     mind_break: mv('Mind Break', 3, 'Mind', 110, 85),
+    overclock: mv('Overclock Cannon', 3, 'Robot', 110, 85),
+    supernova: mv('Supernova', 3, 'Light', 110, 85),
+    toxic_tide: mv('Toxic Tide', 3, 'Toxic', 110, 85),
     hyper_burst: mv('Hyper Burst', 3, 'Normal', 120, 80),
     hp250: hp('Titan Heart', 3, 250),
     dawnblade: { ...mv('Dawnblade', 3, 'Normal', 130, 90), key: true },
@@ -127,11 +141,11 @@ const CM = (() => {
   // held: one can be given to each Creatamon (atk: damage dealt, block: chance to nullify a hit,
   // crit: critical-hit chance, spd: speed bonus, regen: share of health restored each turn).
   const ITEMS = {
-    creataball: { name: 'Creataball', ball: true, desc: 'Needed to forge a new Creatamon' },
-    potion: { name: 'Potion', heal: 60, desc: 'Restores 60 HP' },
-    super_potion: { name: 'Super Potion', heal: 200, desc: 'Restores 200 HP' },
-    max_potion: { name: 'Max Potion', heal: 9999, desc: 'Restores all HP' },
-    revive: { name: 'Revive', revive: true, desc: 'Wakes a fainted Creatamon at half HP' },
+    creataball: { name: 'Creataball', ball: true, price: 300, desc: 'Needed to forge or rebuild a Creatamon' },
+    potion: { name: 'Potion', heal: 60, price: 60, desc: 'Restores 60 HP' },
+    super_potion: { name: 'Super Potion', heal: 200, price: 200, need: 3, desc: 'Restores 200 HP' },
+    max_potion: { name: 'Max Potion', heal: 9999, price: 600, need: 7, desc: 'Restores all HP' },
+    revive: { name: 'Revive', revive: true, price: 400, need: 2, desc: 'Wakes a fainted Creatamon at half HP' },
     gloves: { name: 'Punching Gloves', held: true, atk: 1.2, desc: 'Holder\'s attacks deal 20% more damage' },
     shield: { name: 'Guard Shield', held: true, block: 0.3, desc: '30% chance to nullify a hit on the holder' },
     charm: { name: 'Lucky Charm', held: true, crit: 0.25, desc: 'Holder lands critical hits far more often' },
@@ -166,7 +180,7 @@ const CM = (() => {
   const MAX_NAMES = {
     Normal: 'Max Strike', Fire: 'Max Flare', Water: 'Max Geyser', Grass: 'Max Overgrowth', Electric: 'Max Lightning',
     Rock: 'Max Rockfall', Ice: 'Max Hailstorm', Shadow: 'Max Darkness', Wind: 'Max Tempest', Metal: 'Max Steelstrike',
-    Mind: 'Max Mindstorm', Cursed: 'Max Curse',
+    Mind: 'Max Mindstorm', Robot: 'Max Overdrive', Light: 'Max Radiance', Toxic: 'Max Miasma', Cursed: 'Max Curse',
   };
   // The moves a Creatamon can use right now, as move objects.
   const battleMoves = (c) => {
@@ -197,7 +211,7 @@ const CM = (() => {
   const xpYield = (foe) => 15 * foe.level;
   // ---- Limits that rise with each badge ----
   // A Creatamon will not grow past the level cap: a little above the next Leader's best, so no gym can be out-levelled.
-  const LEVEL_CAPS = [11, 16, 21, 25, 29, 33, 37, 41, 45, 49, 53, 68];
+  const LEVEL_CAPS = [11, 16, 21, 25, 29, 33, 37, 41, 45, 49, 51, 53, 55, 59, 76];
   const levelCap = (badges) => LEVEL_CAPS[Math.min(badges, LEVEL_CAPS.length - 1)];
   // How many move cards one Creatamon can hold. Bound secret cards do not take up a slot. Health cards have no limit.
   const MOVE_SLOTS = 6;
@@ -261,7 +275,9 @@ const CM = (() => {
   // ---- Clothes ----
   // What the player can wear. Locked pieces are found in chests or won from trainers;
   // fixed pieces keep their own colours instead of taking the player's pick.
-  const cl = (slot, name, flags = '') => ({ slot, name, locked: flags.includes('L'), fixed: flags.includes('F') });
+  // sold pieces are bought at Creatastops. base: the shape it is cut from; mark: the design printed on it.
+  const cl = (slot, name, flags = '', base = null, mark = null) => ({ slot, name, locked: flags.includes('L') || flags.includes('S'),
+    fixed: flags.includes('F'), sold: flags.includes('S'), base, mark });
   const CLOTHES = {
     none: cl('hat', 'No hat', 'F'),
     cap: cl('hat', 'Cap'),
@@ -305,7 +321,21 @@ const CM = (() => {
     joggers: cl('bottom', 'Joggers'),
     cargo: cl('bottom', 'Cargo Shorts'),
     long_skirt: cl('bottom', 'Long Skirt'),
+    // Hats sold at Creatastops
+    party_hat: cl('hat', 'Party Hat', 'S'), bunny_ears: cl('hat', 'Bunny Ears', 'S'), horns: cl('hat', 'Little Horns', 'SF'),
+    antenna: cl('hat', 'Antenna', 'SF'), chef_hat: cl('hat', 'Chef Hat', 'SF'), viking: cl('hat', 'Viking Helm', 'SF'),
+    tiara: cl('hat', 'Tiara', 'SF'), propeller: cl('hat', 'Propeller Cap', 'S'), mushroom: cl('hat', 'Mushroom Cap', 'S'),
+    santa: cl('hat', 'Winter Hat', 'SF'), feather: cl('hat', 'Feather Band', 'S'), goggles: cl('hat', 'Goggles', 'SF'),
+    bandana: cl('hat', 'Bandana', 'S'), fez: cl('hat', 'Fez', 'SF'), sombrero: cl('hat', 'Sombrero', 'SF'), jester: cl('hat', 'Jester Hat', 'S'),
   };
+  // The rest of the shop stock: familiar shapes with a design printed on them.
+  const MARKS = { star: 'Star', heart: 'Heart', bolt: 'Bolt', flame: 'Flame', wave: 'Wave', leaf: 'Leaf', skull: 'Skull', rainbow: 'Rainbow', stripe: 'Racing', camo: 'Camo' };
+  const printed = (slot, bases, marks) => bases.forEach((b) => marks.forEach((m) => {
+    CLOTHES[`${b}_${m}`] = cl(slot, `${MARKS[m]} ${CLOTHES[b].name}`, 'S', b, m);
+  }));
+  printed('hat', ['cap', 'beanie', 'bucket', 'tophat', 'headband'], ['star', 'heart', 'bolt', 'flame']);
+  printed('top', ['tee', 'hoodie', 'tank', 'puffer'], ['star', 'heart', 'bolt', 'flame', 'wave', 'leaf', 'skull', 'rainbow']);
+  printed('bottom', ['pants', 'shorts', 'skirt', 'joggers'], ['stripe', 'flame', 'star', 'camo']);
 
   // ---- Species ----
   const SPECIES = {};
@@ -365,6 +395,18 @@ const CM = (() => {
   sp('Thinkling', 'Mind', 'Bird', ['brain_poke', 'scratch']);
   sp('Mesmoth', 'Mind', 'Bug', ['psy_wave', 'brain_poke'], ['hp30']);
   sp('Oraclynx', 'Mind', 'Beast', ['mind_break', 'psy_wave'], ['hp100']);
+  sp('Gearling', 'Robot', 'Blob', ['gear_toss', 'tackle'], ['hp30']);
+  sp('Dronefly', 'Robot', 'Bird', ['gear_toss', 'spark'], ['hp30']);
+  sp('Servopup', 'Robot', 'Beast', ['laser_beam', 'gear_toss'], ['hp100']);
+  sp('Mechadon', 'Robot', 'Shell', ['overclock', 'laser_beam'], ['hp250']);
+  sp('Glimmerbug', 'Light', 'Bug', ['glint', 'tackle'], ['hp30']);
+  sp('Sunpup', 'Light', 'Beast', ['glint', 'scratch'], ['hp30']);
+  sp('Halowing', 'Light', 'Bird', ['sunbeam', 'glint'], ['hp100']);
+  sp('Solarion', 'Light', 'Serpent', ['supernova', 'sunbeam'], ['hp250']);
+  sp('Sludgel', 'Toxic', 'Blob', ['sludge_flick', 'tackle'], ['hp30']);
+  sp('Venomite', 'Toxic', 'Bug', ['sludge_flick', 'scratch'], ['hp30']);
+  sp('Toxitoad', 'Toxic', 'Beast', ['venom_fang', 'sludge_flick'], ['hp100']);
+  sp('Miasmander', 'Toxic', 'Serpent', ['toxic_tide', 'venom_fang'], ['hp250']);
   // Only trainers have these.
   sp('Magmaw', 'Fire', 'Beast', ['flame_wheel', 'body_slam'], ['hp100']);
   sp('Leviadon', 'Water', 'Shell', ['aqua_jet', 'mend'], ['hp100']);
@@ -387,8 +429,19 @@ const CM = (() => {
     4: [['Buzzlebee', 4], ['Petalwing', 4], ['Ladybop', 4], ['Nectarslug', 4], ['Gustail', 4], ['Honeycub', 2], ['Dewsnake', 2], ['Mesmoth', 2], ['Bloomoth', 1]],
     5: [['Crystalisk', 4], ['Frostmaw', 4], ['Voidling', 4], ['Shardwing', 4], ['Prismite', 2], ['Glacierback', 1], ['Umbrawyrm', 1]],
     6: [['Puddlit', 4], ['Dewsnake', 4], ['Gullwave', 4], ['Tidewyrm', 2], ['Rivermaw', 1]],
+    // The far east has its own wildlife, whatever the ground.
+    east1: [['Gearling', 4], ['Dronefly', 4], ['Boltnut', 4], ['Servopup', 2], ['Ironclaw', 2], ['Mechadon', 1]],
+    east2: [['Glimmerbug', 4], ['Sunpup', 4], ['Petalwing', 4], ['Halowing', 2], ['Zapwing', 2], ['Solarion', 1]],
+    east3: [['Sludgel', 4], ['Venomite', 4], ['Gloomoth', 4], ['Toxitoad', 2], ['Dewsnake', 2], ['Miasmander', 1]],
     7: [['Snowpuff', 4], ['Frostfinch', 4], ['Glimmershell', 4], ['Crystalisk', 2], ['Frostmaw', 2], ['Stormkite', 2], ['Oraclynx', 1], ['Glacierback', 1]],
   };
+  // ---- Money ----
+  // Beating a trainer pays out by their strongest Creatamon; Leaders pay triple.
+  const prize = (team, big) => Math.max(...team.map((t) => t[1])) * 14 * (big ? 3 : 1);
+  // What a Power Card costs at a Creatastop, and how many badges it takes before one is sold.
+  const cardPrice = (id) => [0, 150, 450, 1300][CARDS[id].tier];
+  const cardNeed = (id) => [0, 0, 2, 6][CARDS[id].tier];
+  const CLOTHES_PRICE = 250;
   const DEX = Object.values(SPECIES).map((m) => ({ name: m.name, element: m.element }));
 
   const elementMove = (element, tier) => Object.keys(CARDS).find((id) => {
@@ -434,7 +487,7 @@ const CM = (() => {
     ELEMENTS, STRONG, SHAPES, CARDS, TIER_NAMES, EGG, MAX_PARTY, CLOTHES, SPECIES, DEX, WILD, ZONE_OF,
     STARTER_CARDS, ENCOUNTER_RATE,
     isEgg, setMax, battleMoves, DOMAIN_STRIKE, ITEMS, held, EVOLVE_AT, STAGE_NAMES, STAGE_DMG, STAGE_HP, canEvolve, evolve,
-    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp, levelCap, MOVE_SLOTS,
+    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp, levelCap, MOVE_SLOTS, prize, cardPrice, cardNeed, CLOTHES_PRICE,
     useMove, pickMove, spawn, genWild, rollDrop,
   };
 })();

@@ -214,3 +214,111 @@ button.card:hover:not(:disabled) { transform: translateY(-2px); }
 
 .steps { padding-left: 28px; font-size: 14px; line-height: 1.45; }
 .steps li { margin: 2px 0; }
+
+#overlay { box-shadow: inset 0 0 90px rgba(10, 20, 40, .26); }
+
+
+/* ================= Clean theme: navy panels, white cards, one red accent ================= */
+body { font: 15px/1.38 "Nunito", "Segoe UI", system-ui, "Trebuchet MS", sans-serif; color: #1d2437; }
+#game { border-radius: 14px; box-shadow: 0 0 0 3px #1d2437, 0 16px 48px #000a; }
+button { color: inherit; }
+
+/* ---- Heads-up display ---- */
+#hud { top: 10px; left: 10px; padding: 0; border-radius: 0; background: none; max-width: 470px; cursor: pointer; font-size: 13px; }
+#hud .row { display: inline-flex; gap: 10px; align-items: center; padding: 4px 14px 4px 12px; background: #1d2437ee; color: #fff; border-radius: 999px; box-shadow: 0 2px 8px #0005; }
+#hud #area { font-size: 14px; }
+#hud #coins { color: #ffd24a; font-weight: bold; font-size: 12px; }
+#goal { color: #1d2437; margin-top: 5px; padding: 4px 12px 4px 10px; background: #fffffff2; border-left: 5px solid #e8384f; border-radius: 4px 12px 12px 4px; font-size: 12.5px; line-height: 1.3; box-shadow: 0 2px 8px #0004; }
+#goal::before { content: "NEXT  "; font-weight: 800; color: #e8384f; font-size: 10.5px; letter-spacing: .08em; }
+#keys { position: absolute; left: 10px; bottom: 8px; padding: 2px 10px; border-radius: 999px; background: #1d243799; color: #fffc; font-size: 11px; pointer-events: none; }
+#minimap { position: absolute; right: 10px; bottom: 10px; width: 155px; height: 120px; border-radius: 10px; border: 2px solid #fff; box-shadow: 0 3px 12px #0008; image-rendering: pixelated; pointer-events: none; opacity: .94; }
+#place {
+  position: absolute; top: 74px; left: 50%; transform: translateX(-50%); padding: 7px 34px; white-space: nowrap; pointer-events: none; opacity: 0;
+  background: linear-gradient(90deg, #1d243700, #1d2437f2 18%, #1d2437f2 82%, #1d243700); color: #fff; font-size: 22px; font-weight: 800; letter-spacing: .04em;
+  border-top: 2px solid #e8384f; border-bottom: 2px solid #e8384f;
+}
+#place.show { animation: place 2.6s ease-out; }
+@keyframes place { 0% { opacity: 0; transform: translateX(-50%) translateY(-8px); } 12%, 75% { opacity: 1; transform: translateX(-50%); } 100% { opacity: 0; } }
+
+/* ---- Dialogue ---- */
+#dialog, #actions { left: 14px; right: 14px; bottom: 14px; background: #fffffff7; border: 0; border-radius: 16px; box-shadow: 0 4px 0 #1d243733, 0 6px 22px #0006; }
+#dialog { padding: 20px 26px 14px; font-size: 18.5px; line-height: 1.35; }
+#dialog::after { color: #e8384f; right: 20px; bottom: 10px; }
+#dialog .who { position: absolute; top: -13px; left: 20px; padding: 2px 16px; border-radius: 999px; background: #e8384f; color: #fff; font-size: 14px; font-weight: 800; box-shadow: 0 2px 6px #0004; }
+
+/* ---- Battle ---- */
+.info { width: 262px; padding: 8px 18px 9px; background: #1d2437f0; color: #fff; border: 0; border-radius: 6px 22px 6px 22px; box-shadow: 0 3px 12px #0006; border-left: 6px solid #e8384f; }
+.info.me { bottom: 158px; }
+.info span, #meHp { color: #c8d2e6; font-size: 12.5px; }
+.bar { height: 9px; background: #0b1020; border-radius: 999px; padding: 2px; }
+.bar i { border-radius: 999px; }
+#actions button { border: 0; border-left: 8px solid #c8d2e6; border-radius: 12px; background: #eef1f6; padding: 3px 10px; }
+#actions button:hover:not(:disabled) { background: #ffe9a6; }
+#actions .side button { border-left-width: 0; background: #1d2437; color: #fff; border-radius: 999px; }
+#actions .side button:hover:not(:disabled) { background: #e8384f; }
+/* The command menu: a column of pills down the right, with the question at the bottom left. */
+#actions.menu { left: 0; right: 0; bottom: 0; top: 0; height: auto; background: none; box-shadow: none; pointer-events: none; display: block; padding: 0; }
+#actions.menu > * { pointer-events: auto; }
+#actions.menu .prompt { position: absolute; left: 14px; bottom: 14px; margin: 0; padding: 16px 24px; width: 420px; background: #fffffff7; border-radius: 16px; font-size: 18px; box-shadow: 0 4px 0 #1d243733, 0 6px 22px #0006; }
+#actions.menu .cmd { position: absolute; right: 14px; bottom: 14px; width: 232px; display: flex; flex-direction: column; gap: 6px; }
+#actions.menu .cmd button {
+  display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 16px 0 8px; border: 0; border-radius: 999px 10px 10px 999px;
+  background: #1d2437f2; color: #fff; font-size: 16.5px; text-align: left; box-shadow: 0 3px 10px #0005; transition: transform .08s;
+}
+#actions.menu .cmd button i { flex: none; width: 28px; height: 28px; border-radius: 50%; background: #fff; color: #1d2437; display: grid; place-items: center; font-style: normal; font-size: 15px; }
+#actions.menu .cmd button:hover:not(:disabled) { background: #1d2437; transform: translateX(-6px); }
+#actions.menu .cmd button.fight { background: #e8384f; }
+#actions.menu .cmd button.fight i { color: #e8384f; }
+#actions.menu .cmd button.maxbtn { background: linear-gradient(90deg, #c2255c, #7a3fc4); border: 0; }
+#actions.menu .movelist { width: 280px; }
+#actions.menu .movelist button { display: block; height: 42px; padding: 3px 14px; background: #fffffff7; color: #1d2437; border-left: 12px solid var(--c); border-radius: 10px; }
+#actions.menu .movelist button:hover:not(:disabled) { background: #fff3c4; transform: translateX(-6px); }
+#actions.menu .movelist button.back { height: 30px; background: #1d2437f2; color: #fff; border-left-width: 0; text-align: center; }
+#actions.menu .movelist small { color: #5a647c; }
+
+/* ---- Menu pages ---- */
+#menu { background: #eef1f6; padding: 16px 22px; }
+#menu header { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #1d243718; }
+#menu h2 { font-size: 23px; font-weight: 800; }
+#menu h3 { font-size: 12.5px; letter-spacing: .09em; color: #5a647c; margin: 14px 0 6px; }
+#menu button.plain, #menu header button, .filebtn { border: 1.5px solid #1d2437; border-radius: 999px; background: #fff; padding: 4px 13px; }
+#menu button.plain:hover:not(:disabled), #menu header button:hover, .filebtn:hover { background: #1d2437; color: #fff; }
+#menu button.on { background: #1d2437; color: #fff; }
+#menu button.primary { background: #e8384f; border-color: #e8384f; border-radius: 999px; }
+#menu button.primary:hover:not(:disabled) { background: #c92a40; }
+.mon { border: 0; border-radius: 14px; box-shadow: 0 2px 8px #1d243722; padding: 8px 12px; }
+.mon small, .ware small { color: #5a647c; }
+.mon select { border: 1.5px solid #1d2437; border-radius: 999px; padding: 1px 6px; }
+.goal { border: 0; border-left: 6px solid #e8384f; border-radius: 4px 12px 12px 4px; box-shadow: 0 2px 8px #1d243722; }
+.dex span { border-width: 1.5px; border-left-width: 7px; border-color: #1d2437; border-radius: 8px; }
+.badges span { border-radius: 999px; border-width: 1.5px; }
+.badges span.won { border: 1.5px solid #1d2437; }
+.forge canvas, .forge input { border: 1.5px solid #1d2437; border-radius: 12px; }
+.card { border-radius: 10px; box-shadow: 0 2px 6px #1d243726; }
+.purse { font-weight: 800; color: #fff; }
+.purse.dark { color: #1d2437; background: #ffd24a; padding: 3px 12px; border-radius: 999px; }
+.ware { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: #fff; border-radius: 12px; padding: 6px 8px 6px 14px; margin-bottom: 5px; box-shadow: 0 1px 5px #1d24371c; }
+.ware button[data-buy] { min-width: 78px; font-weight: 800; background: #ffd24a !important; border-color: #c79a12 !important; color: #1d2437 !important; }
+.useon { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; font-size: 12px; color: #5a647c; }
+.useon button { font-size: 12px; padding: 2px 9px !important; }
+#bigmap { display: block; width: 100%; max-width: 620px; margin: 0 auto 8px; border-radius: 12px; border: 3px solid #1d2437; image-rendering: pixelated; }
+/* The front page: big tiles on a red field. */
+#menu.home { background: linear-gradient(135deg, #e8384f 0 46%, #c92a40 46% 54%, #1d2437 54%); color: #fff; padding: 22px 30px; }
+#menu.home header { border-bottom: 0; margin-bottom: 6px; }
+#menu.home h2 { font-size: 28px; color: #fff; }
+#menu.home .goal { background: #fffffff2; color: #1d2437; border-left-color: #ffd24a; margin-bottom: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
+#menu .tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; aspect-ratio: 1 / 1.02; padding: 6px;
+  background: #fff; color: #1d2437; border: 0; border-radius: 18px; box-shadow: 0 5px 0 #0003, 0 8px 18px #0004; transition: transform .1s;
+}
+#menu .tile:hover { transform: translateY(-4px) scale(1.03); outline: 4px solid #ffd24a; }
+#menu .tile i { width: 56px; height: 56px; border-radius: 50%; background: var(--c); display: grid; place-items: center; font-style: normal; font-size: 27px; box-shadow: inset 0 -4px 0 #0002; }
+#menu .tile b { font-size: 14.5px; font-weight: 800; }
+#menu .tile small { font-size: 10.5px; color: #5a647c; }
+#menu.home .badges span { color: #fff9; border-color: #fff6; }
+#menu.home .badges span.won { color: #1d2437; border-color: #fff; }
+#title { background: linear-gradient(135deg, #e8384f 0 46%, #c92a40 46% 54%, #1d2437 54%); }
+#title button { border: 0; border-radius: 999px; box-shadow: 0 5px 0 #0004; }
+.info.me { bottom: 232px; }
+#place { top: 118px; }

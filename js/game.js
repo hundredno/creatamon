@@ -2,7 +2,7 @@
 (() => {
   const { CARDS, ELEMENTS, SHAPES, CLOTHES, MAPS, NPCS, CHESTS, TEAMS } = CM;
   const { drawTile, drawPerson, drawProp, drawCreature, drawSpray, playFx, SPRAYS } = GFX;
-  const ITEMS = CM.ITEMS, TOTAL = CM.GYM_ORDER.length;
+  const ITEMS = CM.ITEMS, TOTAL = CM.GYM_ORDER.length, COIN = '◎';
   const $ = (id) => document.getElementById(id);
   const $game = $('game'), $world = $('world'), $battle = $('battle'), $dialog = $('dialog');
   const $actions = $('actions'), $menu = $('menu'), $title = $('title'), $hud = $('hud');
@@ -18,6 +18,8 @@
   let move = null;       // in-progress step {pts: tiles passed through, t: 0..1, n: steps}
   let help = false;      // the How to play page is open
   let inv = false;       // the inventory page is open
+  let page = 'home';     // which menu page is showing: home | party | storage | dex | map | sprays | shop
+  let shop = null;       // the Creatastop being browsed
   let forge = null;      // open Forge editor {idx, draft, avail}
   let wardrobe = null;   // open character editor {isNew, draft}
   let B = null;          // current battle {me, foe}
@@ -30,14 +32,19 @@
     cards: {}, party: [], chests: {}, beaten: {}, f: {}, badges: {}, smashed: {}, solved: {}, quiz: 0,
     player: null, wardrobe: {}, seen: {},
     items: {}, sprays: {}, sprayOwned: { star: true, smile: true }, spray: 'star', tips: {},
+    money: 0, storage: [], explored: '',
   });
-  const save = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } };
+  // packSeen: the explored map, defined with the minimap below.
+  const save = () => { try { S.explored = packSeen(); localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ } };
   const load = () => {
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
       if (s && s.v === 2) {
         // Saves from before items and sprays: start them off with a ball and a few potions.
         if (!s.items) s.items = { creataball: 1, potion: 3 };
+        // Saves from before the bike: it comes with the endorsement, and its floats with Surf.
+        if (s.f && s.f.endorsed) s.f.bike = true;
+        if (s.f && s.f.surf) s.f.hydro = true;
         return { ...newState(), ...s };
       }
       if (!s) return s;
@@ -62,8 +69,13 @@
 
   // ---------- Dialog ----------
   let advance = null, advanceAt = 0;
+  // Lines that open with a known speaker's name get it on a tab above the box.
+  const SPEAKERS = new Set([...CM.NPCS.map((n) => n.name), 'Finn', 'Wren', 'Nettie', 'Cyril', 'Rook', 'Opaline', 'Mum', 'Champion Vex', 'Chairman Sterling',
+    'Prof. Willow', 'Gatekeeper', 'Cup Registrar', 'League Staff', 'Team Holler Grunt', 'Madame Ohm']);
   const say = (text) => new Promise((resolve) => {
-    $dialog.textContent = text;
+    const m = /^([^:]{2,28}): ([\s\S]*)$/.exec(text);
+    if (m && SPEAKERS.has(m[1])) $dialog.innerHTML = `<span class="who">${esc(m[1])}</span>${esc(m[2])}`;
+    else $dialog.textContent = text;
     $dialog.hidden = false;
     advanceAt = performance.now();
     advance = () => { advance = null; resolve(); };
@@ -121,19 +133,84 @@
   const pickupAt = (x, y) => { const c = chestAt(x, y); return c && !S.chests[`${S.map}:${x},${y}`] ? c : null; };
   const blocked = (x, y) => !!npcAt(x, y);
   const hasFighter = () => S.party.some((c) => c.hp > 0);
-  // Once the Gym Challenge is under way, the HUD points at the next gym's door.
-  const ARROWS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
-  const compass = () => {
-    const gm = CM.GYMS.find((m) => !S.badges[m.el]);
-    if (!gm || !S.f.ceremony || S.map !== 'world') return '';
-    const [dx, dy] = CM.gymDoor(gm.el), ox = dx - S.x, oy = dy + 1 - S.y, far = Math.abs(ox) + Math.abs(oy);
-    if (far < 2) return ` · ${gm.town} Gym: right here`;
-    return ` · ${gm.town} Gym ${ARROWS[(Math.round(Math.atan2(oy, ox) / (Math.PI / 4)) + 8) % 8]} ${far} steps`;
+  // ---------- Minimap ----------
+  // The world is drawn one pixel per tile, and only the parts the player has walked near are filled in.
+  const MW = MAPS.world.rows[0].length, MH = MAPS.world.rows.length, SIGHT = 7;
+  const seenMap = new Uint8Array(MW * MH);
+  const mapCv = document.createElement('canvas');
+  mapCv.width = MW; mapCv.height = MH;
+  const MAP_COLORS = { '#': '#2f6b3a', T: '#7fa89a', '^': '#8a7458', '~': '#4a90d9', b: '#a9744a', '.': '#7ec850', ',': '#5fae45', ';': '#3f8f4a', ':': '#8d8496',
+    '*': '#a6d977', '"': '#cfe6ee', '=': '#e3c98a', c: '#b9b4a8', S: '#e8d9a0', s: '#f2f7fb', _: '#77707f', H: '#f08aa0', m: '#3f8f4a', x: '#6d5a48',
+    R: '#b8553c', W: '#efe6d2', D: '#5a4632', M: '#c9a468' };
+  const mapColor = (x, y) => {
+    const ch = MAPS.world.rows[y][x], tint = CM.TINT[`${x},${y}`];
+    return tint && 'GWD'.includes(ch) ? (ELEMENTS[tint] || { color: tint === 'League' ? '#e0483c' : '#7d8496' }).color : MAP_COLORS[ch] || '#7ec850';
   };
-  const updateHud = () => { $('area').textContent = `${CM.areaAt(S.map, S.x, S.y).name} · ${badgeCount()}/${TOTAL} badges${compass()}`; };
+  const paintSeen = (x, y) => { const g = mapCv.getContext('2d'); g.fillStyle = mapColor(x, y); g.fillRect(x, y, 1, 1); };
+  const packSeen = () => { let out = ''; for (let i = 0; i < seenMap.length; i += 6) { let v = 0; for (let k = 0; k < 6; k++) v |= (seenMap[i + k] || 0) << k; out += String.fromCharCode(48 + v); } return out; };
+  function loadSeen(str) {
+    seenMap.fill(0);
+    mapCv.getContext('2d').clearRect(0, 0, MW, MH);
+    for (let i = 0; i < (str || '').length; i++) {
+      const v = str.charCodeAt(i) - 48;
+      for (let k = 0; k < 6; k++) if (v >> k & 1 && i * 6 + k < seenMap.length) { seenMap[i * 6 + k] = 1; paintSeen((i * 6 + k) % MW, Math.floor((i * 6 + k) / MW)); }
+    }
+  }
+  // Where the player counts as standing on the world map (the door they came in by, when indoors).
+  const worldSpot = () => (S.map === 'world' ? [S.x, S.y] : MAPS[S.map].out.slice(1));
+  function reveal() {
+    const [px, py] = worldSpot();
+    for (let y = Math.max(0, py - SIGHT); y <= Math.min(MH - 1, py + SIGHT); y++) {
+      for (let x = Math.max(0, px - SIGHT); x <= Math.min(MW - 1, px + SIGHT); x++) {
+        if (seenMap[y * MW + x] || (x - px) ** 2 + (y - py) ** 2 > SIGHT * SIGHT + 2) continue;
+        seenMap[y * MW + x] = 1;
+        paintSeen(x, y);
+      }
+    }
+  }
+  // Draws the map so far onto a canvas, with the player, the gyms found so far and the next goal marked.
+  // span: how many tiles across to show, centred on the player (the corner minimap); left out, the whole world (the Town Map).
+  function drawMap(cv, span = MW) {
+    const g = cv.getContext('2d'), k = cv.width / span, rows = cv.height / k, [px, py] = worldSpot();
+    const x0 = Math.max(0, Math.min(MW - span, px + 0.5 - span / 2)), y0 = Math.max(0, Math.min(MH - rows, py + 0.5 - rows / 2));
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = '#141a2b'; g.fillRect(0, 0, cv.width, cv.height);
+    g.drawImage(mapCv, x0, y0, span, rows, 0, 0, cv.width, cv.height);
+    // Marks stay on the rim of the picture when what they mark is out of frame.
+    const dot = (x, y, r, fill, line) => {
+      const cx = Math.max(r + 2, Math.min(cv.width - r - 2, (x + 0.5 - x0) * k)), cy = Math.max(r + 2, Math.min(cv.height - r - 2, (y + 0.5 - y0) * k));
+      g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fillStyle = fill; g.fill(); g.lineWidth = Math.max(1.5, r * 0.35); g.strokeStyle = line; g.stroke();
+    };
+    const [, map, qx, qy] = quest();
+    if (map) {
+      const door = map === 'world' ? null : Object.keys(CM.WARPS).find((key) => CM.WARPS[key].map === map);
+      const [gx, gy] = map === 'world' ? [qx, qy] : door.split(':')[1].split(',').map(Number);
+      dot(gx, gy, span === MW ? k * 2.6 : 6, '#ffd24a', '#e8384f');
+    }
+    dot(px, py, span === MW ? k * 1.8 : 4.5, '#ffffff', '#1d2437');
+  }
+
+  // ---------- HUD ----------
+  let lastArea = null;
+  function updateHud() {
+    const name = CM.areaAt(S.map, S.x, S.y).name;
+    $('area').textContent = name;
+    $('coins').textContent = `${badgeCount()}/${TOTAL} badges · ${COIN}${S.money}`;
+    $('goal').textContent = objective();
+    // Walking into somewhere new announces it.
+    if (name !== lastArea) {
+      lastArea = name;
+      const $place = $('place');
+      $place.textContent = name;
+      $place.classList.remove('show'); void $place.offsetWidth; $place.classList.add('show');
+    }
+    reveal();
+    drawMap($('minimap'), 46);
+  }
 
   function goTo(map, x, y, dir = S.dir) {
-    Object.assign(S, { map, x, y, dir, surf: false });
+    Object.assign(S, { map, x, y, dir, surf: false, bike: !!S.bike && map === 'world' });
     move = null;
     P = CM.initPuzzle(map, isDone(map));
     updateHud();
@@ -142,7 +219,7 @@
   function update(dt) {
     if (mode !== 'world') return;
     if (move) {
-      move.t += dt / (130 * move.n);
+      move.t += dt / ((S.bike ? BIKE_STEP : WALK_STEP) * move.n);
       if (move.t >= 1) { [S.x, S.y] = move.pts[move.pts.length - 1]; move = null; onStep(); }
       return;
     }
@@ -152,8 +229,24 @@
     S.dir = dir;
     const warp = CM.WARPS[`${S.map}:${S.x + DIRS[dir][0]},${S.y + DIRS[dir][1]}`];
     if (warp && warp.need && warp.need(S)) return;
+    // A bike with floats rides straight out onto water.
+    const afloat = S.bike && S.f.hydro && !S.surf && CM.charAt(S.map, S.x + DIRS[dir][0], S.y + DIRS[dir][1]) === '~';
+    if (afloat) S.surf = true;
     const res = CM.step(S.map, P, S, S.x, S.y, dir, blocked);
     if (res) move = { pts: [[S.x, S.y], ...res.path], t: 0, n: res.n };
+    else if (afloat) S.surf = false;
+  }
+  // Milliseconds per tile on foot and on the bike.
+  const WALK_STEP = 130, BIKE_STEP = 65;
+  // Q hops on or off the bike. It is for the open road: not indoors, and no getting off in the middle of a lake.
+  function toggleBike() {
+    if (move) return;
+    if (!S.f.bike) return talk('You do not have a bike yet.');
+    if (S.map !== 'world') return talk('No cycling indoors!');
+    if (S.surf && S.bike) return talk('You cannot get off your bike out on the water. Ride back to dry land first.');
+    if (S.surf && !S.f.hydro) return talk('A bike would sink out here.');
+    S.bike = !S.bike;
+    save();
   }
   // Where the player is drawn right now, in tiles.
   const where = () => {
@@ -212,7 +305,7 @@
       await run(async () => {
         await tip('wild', ['Something rustles! Tall grass, flowers, forest floor and cave rubble hide wild Creatamon. Walking through them can start a battle at any step.',
           'Wild battles are how your Creatamon earn XP and grow, and wild Creatamon sometimes drop Power Cards. If yours is hurt, press Run to get away, and keep to the paths to avoid them.']);
-        const foe = CM.genWild(habitat, area.lv);
+        const foe = CM.genWild(area.wild || habitat, area.lv);
         const result = await battle([foe], { zone: habitat });
         if (result === 'win') {
           const drop = CM.rollDrop(area.drops, Math.random, foe.rare);
@@ -241,7 +334,15 @@
     const foes = opts.boss ? team.map((t) => CM.spawn(...t)) : CM.makeTeam(name, team);
     const result = await battle(foes, { trainer: name, zone: bgZone(), max: S.map.startsWith('gym_'), ...opts });
     $battle.hidden = true;
-    if (result === 'win') return true;
+    if (result === 'win') {
+      if (!opts.boss) {
+        const won = CM.prize(team, opts.big);
+        S.money += won;
+        await say(`${name} paid out ${COIN}${won} for the win!`);
+        await tip('money', `Beating trainers earns coins (${COIN}). Spend them at a Creatastop, the stall with the striped awning in most towns, on potions, Creataballs, Power Cards and clothes.`);
+      }
+      return true;
+    }
     await whiteout();
     return false;
   }
@@ -274,6 +375,7 @@
     if (move) return;
     const tx = S.x + DIRS[S.dir][0], ty = S.y + DIRS[S.dir][1], k = `${tx},${ty}`;
     const npc = npcAt(tx, ty);
+    if (npc && npc.stop) { shop = npc.stop; page = 'shop'; return openMenu(); }
     if (npc) return run(() => meet(npc));
     const ch = CM.charAt(S.map, tx, ty);
     const warp = CM.WARPS[`${S.map}:${k}`], why = warp && warp.need && warp.need(S);
@@ -282,9 +384,11 @@
     if (ch === 'x' && !S.smashed[`${S.map}:${k}`]) {
       return fieldMove('rock_smash', 'The rock is riddled with cracks.', () => { S.smashed[`${S.map}:${k}`] = true; });
     }
+    if (ch === '~' && !S.surf && S.f.hydro) return talk('Your bike has floats now. Press Q to hop on, then ride straight onto the water.');
     if (ch === '~' && !S.surf) {
       return fieldMove('surf', 'The water is deep and the current is strong.', () => {
         S.surf = true;
+        S.bike = false;
         move = { pts: [[S.x, S.y], [tx, ty]], t: 0, n: 1 };
       });
     }
@@ -325,34 +429,52 @@
   const you = () => S.player.name;
 
   // What to do next, shown in the menu.
-  function objective() {
-    const f = S.f, b = S.badges;
-    if (!S.party.length) return 'Forge your first Creatamon from your Power Cards.';
-    if (!f.rival1) return 'Battle Finn outside your house in Hearthwick.';
-    if (!f.grove) return 'A Fluffin broke through the gate west of Hearthwick. Follow it into the Drowsing Grove.';
-    if (!f.endorsed) return 'Take Route 1 east to Wedgemoor and battle Finn in front of the Champion.';
-    if (!f.ceremony) return 'Go north through the Wildlands to Kilnford for the opening ceremony.';
-    if (!b.Grass) return 'Head west from Kilnford through Gritstone Mine to the Grass gym in Furrowfield.';
-    if (!b.Water) return 'Cross the bridge north of Furrowfield to the Water gym in Brinemouth.';
-    if (!b.Fire) return 'Take Brinecut Tunnel east of Brinemouth back to Kilnford and its Fire gym.';
-    if (!b.Wind) return 'Cross the Windswept Steppe, south off Route 3, to the Wind gym in Galeholt.';
-    if (!b.Rock) return 'Go east through Anvilgate and along Route 6 to the Rock gym in Cairnside.';
-    if (!f.mural) return 'Something crashed by the old mural in Cairnside. Take a look.';
-    if (!b.Electric) return 'Cross the Gloamwood, south off Route 6, to the Electric gym in Lumenlea.';
-    if (!b.Metal) return 'Climb the Ironway, north off the Forgeway, to the Metal gym in Steelspire. Bring Rock Smash.';
-    if (!f.rival3) return 'Finn is waiting at the north gate of Anvilgate.';
-    if (!b.Ice) return 'Follow Route 7 north from Anvilgate to the Ice gym in Frosthollow.';
-    if (!f.surf) return 'Talk to Wren by the Hero\'s Bath in Frosthollow.';
-    if (!b.Shadow) return 'Surf across the river on Route 9, east of Frosthollow, to the Shadow gym in Thornmuth.';
-    if (!b.Mind) return 'Take Route 14 east out of Thornmuth to the Mind gym in Reverie.';
-    if (!b.Normal) return 'Return to Anvilgate for the final badge.';
-    if (!f.semis) return 'Take Route 10 south from Anvilgate to Summit City and enter the Champion Cup.';
-    if (!f.opaline) return 'Champion Vex is at Sterling Tower in the east of Summit City.';
-    if (!f.night) return 'Win the Champion Cup finals at the Summit City stadium.';
-    if (!f.blade) return 'Leave Summit City by the west gate and hurry to the altar deep in the Drowsing Grove.';
-    if (!f.dawn) return 'Stop Chairman Sterling at the Energy Plant in Anvilgate.';
-    if (!f.champion) return 'Champion Vex is waiting for you at the Summit City stadium.';
-    return 'You are the Champion of Galdra! Keep collecting cards and filling the Creatadex.';
+  // What to do next, and where: [text, map, x, y]. The spot drives the guide arrow and the map marker.
+  function quest() {
+    const f = S.f, b = S.badges, at = (id) => { const n = CM.NPCS.find((p) => p.id === id); return [n.map, n.x, n.y]; };
+    const gym = (el) => [`gym_${el}`, ...MAPS[`gym_${el}`].leader];
+    const steps = [
+      [!S.party.length, 'Forge your first Creatamon from your Power Cards.'],
+      [!f.rival1, 'Battle Finn outside your house in Hearthwick.', ...at('finn_home')],
+      [!f.grove, 'A Fluffin broke through the gate west of Hearthwick. Follow it into the Drowsing Grove.', ...at('beast')],
+      [!f.endorsed, 'Take Route 1 east to Wedgemoor and battle Finn in front of the Champion.', ...at('finn_wedge')],
+      [!f.ceremony, 'Go north through the Wildlands to Kilnford for the opening ceremony.', ...at('staff')],
+      [!b.Grass, 'Head west from Kilnford through Gritstone Mine to the Grass gym in Furrowfield.', ...gym('Grass')],
+      [!b.Water, 'Cross the bridge north of Furrowfield to the Water gym in Brinemouth.', ...gym('Water')],
+      [!b.Fire, 'Take Brinecut Tunnel east of Brinemouth back to Kilnford and its Fire gym.', ...gym('Fire')],
+      [!b.Wind, 'Cross the Windswept Steppe, south off Route 3, to the Wind gym in Galeholt.', ...gym('Wind')],
+      [!b.Rock, 'Go east through Anvilgate and along Route 6 to the Rock gym in Cairnside.', ...gym('Rock')],
+      [!f.mural, 'Something crashed by the old mural in Cairnside. Take a look.', ...at('cyril_mural')],
+      [!b.Electric, 'Cross the Gloamwood, south off Route 6, to the Electric gym in Lumenlea.', ...gym('Electric')],
+      [!b.Metal, 'Climb the Ironway, north off the Forgeway, to the Metal gym in Steelspire. Bring Rock Smash.', ...gym('Metal')],
+      [!f.rival3, 'Finn is waiting at the north gate of Anvilgate.', ...at('finn_r7')],
+      [!b.Ice, 'Follow Route 7 north from Anvilgate to the Ice gym in Frosthollow.', ...gym('Ice')],
+      [!f.surf, 'Talk to Wren by the Hero\'s Bath in Frosthollow.', ...at('wren_bath')],
+      [!b.Shadow, 'Ride your bike (press Q) across the river on Route 9, east of Frosthollow, to the Shadow gym in Thornmuth.', ...gym('Shadow')],
+      [!b.Mind, 'Take Route 14 east out of Thornmuth to the Mind gym in Reverie.', ...gym('Mind')],
+      [!b.Robot, 'Leave Reverie by its south gate and follow Route 15 to the Robot gym in Cogsworth.', ...gym('Robot')],
+      [!b.Light, 'Take Route 16 south from Cogsworth to the Light gym in Solhaven.', ...gym('Light')],
+      [!b.Toxic, 'Follow Route 17 down into the fen to the Toxic gym in Mirefen.', ...gym('Toxic')],
+      [!b.Normal, 'Go back through Solhaven and west past Lumenlea to Anvilgate for the final badge.', ...gym('Normal')],
+      [!f.semis, 'Take Route 10 south from Anvilgate to Summit City and enter the Champion Cup.', ...at('registrar')],
+      [!f.opaline, 'Champion Vex is at Sterling Tower in the east of Summit City.', ...at('opaline')],
+      [!f.night, 'Win the Champion Cup finals at the Summit City stadium.', ...at('registrar')],
+      [!f.blade, 'Leave Summit City by the west gate and hurry to the altar deep in the Drowsing Grove.', ...at('altar')],
+      [!f.dawn, 'Stop Chairman Sterling at the Energy Plant in Anvilgate.', ...at(f.sterling ? 'eternox' : 'sterling')],
+      [!f.champion, 'Champion Vex is waiting for you at the Summit City stadium.', ...at('registrar')],
+    ];
+    const next = steps.find((st) => st[0]);
+    return next ? next.slice(1) : ['You are the Champion of Galdra! Keep collecting cards and filling the Creatadex.'];
+  }
+  const objective = () => quest()[0];
+  // Where the guide should point on the map the player is standing in: the goal itself, or the door on the way to it.
+  function waypoint() {
+    const [, map, x, y] = quest();
+    if (!map) return null;
+    if (map === S.map) return [x, y];
+    if (S.map !== 'world') return MAPS[S.map].exit;
+    const door = Object.keys(CM.WARPS).find((k) => CM.WARPS[k].map === map);
+    return door ? door.split(':')[1].split(',').map(Number) : null;
   }
 
   // What happens right after each badge.
@@ -363,7 +485,12 @@
     Fire: ['Three badges! The Windswept Steppe is open to you now: head west along Route 3, then south. Galeholt lies beyond it.'],
     Wind: ['Four badges! The League staff at Anvilgate, east of Kilnford, will let you through now.'],
     Metal: ['Leader Forge: Finn came through here asking after you. Said he would wait at the north gate of Anvilgate.'],
-    Mind: ['Leader Sibyl: One badge left. I see a great hall in Anvilgate, and five people asking you questions.'],
+    Mind: ['Leader Sibyl: I see a road south of Reverie, and three towns you have never heard of: Cogsworth, Solhaven and Mirefen.',
+      'Leader Sibyl: The League staff at our south gate will let you through now.'],
+    Robot: ['Leader Axle: Solhaven is south of here, down Route 16. Bring something to shade your eyes.'],
+    Light: ['Leader Aurelia: The fen road to Mirefen is open to you. It is as dark down there as it is bright up here.'],
+    Toxic: ['Leader Brack: One badge left, and it is the hard one. Brann, in Anvilgate.',
+      'Leader Brack: The short cut west of Solhaven is open to you now: it comes out in Lumenlea.'],
     Rock: ['CRASH! Something shakes the cliffs outside. It came from the old mural.'],
     Electric: ['Madame Ohm: I have been looking for a successor, you know. That sulky boy Cyril has just the right amount of spite.',
       'Madame Ohm: Off you go, dearie. Steelspire next: north off the Forgeway. Mind the Ironway, it is all rock.'],
@@ -378,7 +505,7 @@
     const gm = npc.gym;
     if (S.badges[gm.el]) return sayAll(`${gm.name}: That battle of ours is still the talk of ${gm.town}.`);
     await say(`${gm.name}: ${gm.pre}`);
-    if (!await duel(gm.name, gm.team, { zone: 'in', foeMax: true })) return;
+    if (!await duel(gm.name, gm.team, { zone: 'in', foeMax: true, big: true })) return;
     S.badges[gm.el] = true;
     S.solved[S.map] = true;
     await sayAll([`${gm.name}: ${gm.post}`, `You received the ${gm.el} Badge! That makes ${badgeCount()} of ${TOTAL}.`]);
@@ -483,6 +610,12 @@
         'You received a Letter of Endorsement!']);
       await giveCards(['hp30', 'scratch']);
       flag('endorsed');
+      flag('bike');
+      await sayAll(['Champion Vex: One more thing. Galdra is a big place, and the roads between gyms are long. Take this.',
+        'You got a Bike!',
+        'Press Q to hop on your bike, and Q again to get off. Riding is twice as fast as walking.',
+        'You steer it just like walking, and you can still talk to people and pick things up. Wild Creatamon can still jump out at you in tall grass.',
+        'The bike is for outdoors only: you get off by yourself when you go through a door.']);
     },
     guard_r2: () => say('League Staff: Route 2 leads to the Wildlands and Kilnford. Only endorsed challengers may pass.'),
     gate_summit: async () => {
@@ -494,7 +627,7 @@
       await sayAll(['League Staff: Endorsed challengers, this way! The opening ceremony is starting.',
         'You walk out onto the pitch. The crowd roars.',
         `Chairman Sterling: Welcome, one and all, to the Gym Challenge! ${TOTAL} gyms. ${TOTAL} badges. One Champion Cup!`,
-        'One by one the Gym Leaders take the field: Thatch, Marina, Cinder, Zephyra, Gneiss, Madame Ohm, Forge, Rime, Sibyl and Brann. The Thornmuth Leader has not turned up.',
+        'One by one the Gym Leaders take the field: Thatch, Marina, Cinder, Zephyra, Gneiss, Madame Ohm, Forge, Rime, Sibyl, Axle, Aurelia, Brack and Brann. The Thornmuth Leader has not turned up.',
         'Cyril: So you are the Champion\'s pick. I was endorsed by the Chairman himself. Try not to get in my way.',
         'Nettie: Ignore him. I am Nettie. Sorry about the noisy lot in pink, that is Team Holler. They... sort of follow me around.',
         'Wren: I am Wren, Prof. Willow\'s granddaughter. The mine to the west is full of cracked rocks, so take this.']);
@@ -566,8 +699,12 @@
       await sayAll(['Wren: Listen to this. The heroes and their two beasts beat the Blackest Night together, and then the beasts went to sleep. Somewhere foggy and forgotten.',
         'Wren: Thornmuth is across the river and there is no bridge. Take this.']);
       await giveCards(['surf']);
-      await say('Wren: Slot Surf onto a Creatamon, face the water and it will carry you over.');
       flag('surf');
+      flag('hydro');
+      await sayAll(['Wren: And lend me your bike a second. ...There! I have fitted it with floats.',
+        'Your Bike was upgraded: it can now ride on water!',
+        'To cross water, press Q to get on your bike and simply ride onto it. You cannot get off until you are back on land.',
+        'Wren: Or slot that Surf card onto a Creatamon, face the water and press Enter, and it will carry you instead. Your choice.']);
     },
     holler_gate: async () => {
       await say('Team Holler Grunt: Thornmuth is CLOSED! If no challengers get in, only Nettie gets the badge. Genius, right? ...You want to fight about it?');
@@ -668,6 +805,7 @@
   };
 
   async function meet(npc) {
+    if (npc.line) return say(npc.line);
     if (npc.sign) {
       const n = CM.GYM_ORDER.indexOf(npc.el), short = n - badgeCount();
       return say(`${npc.name}. ${npc.sign.name} awaits challengers. ${S.badges[npc.el] ? 'Your name is already on the roll of winners!'
@@ -681,7 +819,7 @@
 
   // The controls, shown at the very start and again from the menu's How to play button.
   const HOW_TO = [
-    ['The idea', 'Creatamon are creatures that battle for you by trading attacks in turns. Beat the Leader of all 11 gyms, then win the Champion Cup.'],
+    ['The idea', 'Creatamon are creatures that battle for you by trading attacks in turns. Beat the Leader of all 14 gyms, then win the Champion Cup.'],
     ['Words', 'HP is health: at 0 a Creatamon faints. XP is experience: enough of it raises a level, which makes a Creatamon stronger. A badge is the prize for beating a gym.'],
     ['Move', 'Arrow keys or W A S D.'],
     ['Talk, read, use', 'Face something and press Enter (or Space, or Z). The same key moves text along.'],
@@ -693,6 +831,7 @@
     ['Pick-ups', 'Sparkles on the ground are cards, items, clothes and spray designs. Walk over them.'],
     ['Heal', 'Step on a pink heal pad to restore your whole party. If everyone faints you return to the last pad you used.'],
     ['Gyms', 'Each town\'s gym has a puzzle before its Leader. Press R to start a puzzle over. In gyms you can use Max Mode once per battle.'],
+    ['Bike', 'Once the Champion gives you a bike, press Q outdoors to hop on or off. It is twice as fast as walking. Later it gets floats: then just ride onto water to cross it.'],
     ['Field moves', 'Rock Smash breaks cracked rocks and Surf crosses water: slot the card on a Creatamon (a rebuild, so keep a Creataball spare), face the obstacle and press Enter.'],
     ['Spray paint', 'Press G to spray your chosen design on the ground in front of you.'],
   ];
@@ -700,7 +839,7 @@
     await run(async () => {
       await sayAll(['Welcome to Creatamon! Press Enter (or click this box) to read on.',
         'Creatamon are creatures that battle for you. You never fight yourself: you tell your Creatamon which attack to use, and it takes turns trading hits with the other side.',
-        'Your goal: travel from town to town, beat the Leader of each of the 11 gyms to win its badge, then win the Champion Cup.',
+        'Your goal: travel from town to town, beat the Leader of each of the 14 gyms to win its badge, then win the Champion Cup.',
         'Walk with the arrow keys or W A S D. To talk to someone, walk up to them, face them and press Enter.',
         'Lost? Press M for the menu. The red box at the top always says exactly where to go next, and the How to play button explains everything again.',
         'Two things to look out for: sparkles on the ground are free gifts (walk over them), and a pink pad with a cross heals your Creatamon when you step on it.',
@@ -820,8 +959,10 @@
     if (--B.domain.turns <= 0) { closeDomain(); await say('The domain collapses.'); }
   }
 
-  function pickButton(html) {
+  // cls: 'menu' lays the buttons out as a column down the right-hand side; otherwise they fill the bottom panel.
+  function pickButton(html, cls = '') {
     $dialog.hidden = true;
+    $actions.className = cls;
     $actions.innerHTML = html;
     $actions.hidden = false;
     return new Promise((resolve) => {
@@ -846,17 +987,19 @@
   async function chooseAction(canRun, canMax) {
     for (;;) {
       const list = CM.battleMoves(B.me);
-      const moves = list.map((m, i) => `<button data-move="${i}" style="border-left-color:${ELEMENTS[m.element].color}">
-          <b>${m.name}</b><small>${CM.cardDesc(m)}</small></button>`).join('');
       const canSwitch = S.party.some((c) => c.hp > 0 && c !== B.me);
-      const max = canMax() ? '<button class="wide maxbtn" data-act="max"><b>Max Mode</b></button>' : '';
       const usable = Object.keys(ITEMS).some((id) => (ITEMS[id].heal || ITEMS[id].revive) && S.items[id] > 0);
-      const d = await pickButton(`<div class="moves">${moves}</div><div class="side">${max}
-        <button data-act="switch" ${canSwitch ? '' : 'disabled'}><b>Switch</b></button>
-        <button data-act="bag" ${usable ? '' : 'disabled'}><b>Bag</b></button>
-        <button class="wide" data-act="run"><b>Run</b></button></div>`);
-      if (d.move) return { type: 'move', move: list[+d.move] };
-      if (d.act === 'max') {
+      const d = await pickButton(`<p class="prompt">What will <b>${esc(shownName(B.me))}</b> do?</p><div class="cmd">
+        <button class="fight" data-act="fight"><i>⚔</i><b>Fight</b></button>
+        ${canMax() ? '<button class="maxbtn" data-act="max"><i>✦</i><b>Max Mode</b></button>' : ''}
+        <button data-act="switch" ${canSwitch ? '' : 'disabled'}><i>⟳</i><b>Creatamon</b></button>
+        <button data-act="bag" ${usable ? '' : 'disabled'}><i>✚</i><b>Bag</b></button>
+        <button data-act="run"><i>➜</i><b>Run</b></button></div>`, 'menu');
+      if (d.act === 'fight') {
+        const m = await pickButton(`<div class="cmd movelist">${list.map((mv, i) => `<button data-move="${i}" style="--c:${ELEMENTS[mv.element].color}">
+          <b>${mv.name}</b><small>${CM.cardDesc(mv)}</small></button>`).join('')}<button class="back" data-back="1"><b>Back</b></button></div>`, 'menu');
+        if (m.move) return { type: 'move', move: list[+m.move] };
+      } else if (d.act === 'max') {
         if (!CM.isEgg(B.me)) B.maxUsed = true;
         await goMax('me');
       } else if (d.act === 'switch') {
@@ -951,10 +1094,10 @@
     await say(`Go, ${B.me.name}!`);
     await tip('battle', ['Your first battle! Here is how it works.',
       'Your Creatamon is at the bottom left, the foe at the top right. The green bar by each one is its HP (health). Attacks shrink it, and when it runs out that Creatamon faints.',
-      'You take turns. Each turn you pick one attack from the buttons on the left, then the foe picks one. The faster Creatamon goes first.',
+      'You take turns. Each turn, press Fight and pick one attack from the list; then the foe picks one. The faster Creatamon goes first.',
       'Each attack shows its element and its power: higher power hurts more. An attack of your Creatamon\'s own element gets a bonus.',
       'Elements beat each other like rock-paper-scissors: Water douses Fire, Fire burns Grass, Grass soaks up Water. "Super effective" means you picked well and did double damage.',
-      'The buttons on the right: Bag uses a Potion to heal, Switch swaps in another of your Creatamon, Run escapes from a wild Creatamon (never from a person).',
+      'The other buttons: Bag uses a Potion to heal, Creatamon swaps in another of yours, Run escapes from a wild Creatamon (never from a person).',
       'Make every foe faint and you win. If all of yours faint you lose, but you just wake up at the last heal pad. Good luck!']);
 
     // Deals with anyone who has fainted. Returns 'win' | 'lose', 'next' if someone new came out, or null.
@@ -1068,17 +1211,19 @@
   const sortedCards = (counts) => Object.keys(CARDS).filter((id) => counts[id] > 0);
 
   function openMenu() {
+    if (!shop && page === 'shop') page = 'home';
     mode = 'menu';
     $menu.hidden = false;
     renderMenu();
   }
   function closeMenu() {
-    forge = wardrobe = null;
+    forge = wardrobe = shop = null;
     help = inv = false;
+    page = 'home';
     $menu.hidden = true;
     mode = 'world';
     // Straight after the very first Creatamon is made, point the way to the first battle.
-    if (S.party.length && S.f.start && !S.tips.made) {
+    if (S.party.length && S.f.start && !S.f.rival1 && !S.tips.made) {
       S.tips.made = true;
       talk([`${S.party[0].name} is ready! It follows you everywhere, out of sight until a battle starts.`,
         'Finn is standing just below you, next to the pink heal pad. Walk up to him, face him and press Enter to have your first battle.',
@@ -1087,19 +1232,50 @@
     save();
   }
 
+  const head = (title, extra = '') => `<header><h2>${title}</h2><span>${extra}<button data-a="home">◀ Menu</button> <button data-a="close">Close</button></span></header>`;
+  const monLine = (c) => `<b>${esc(c.name)}</b> Lv ${c.level} <small>· ${CM.STAGE_NAMES[c.stage || 0]} ${c.element} ${c.shape} · ${c.hp} / ${CM.maxHp(c)} HP</small><br>
+    <small>${c.moves.map((id) => CARDS[id].name).join(', ')}${c.hpCards.length ? ` · ${c.hpCards.length} health card${c.hpCards.length === 1 ? '' : 's'}` : ''}</small>`;
+  const itemList = () => Object.keys(ITEMS).filter((id) => S.items[id] > 0);
+
   function renderMenu() {
     if (inv) return renderInv();
     if (help) return renderHelp();
     if (wardrobe) return renderWardrobe();
     if (forge) return renderForge();
+    ({ party: renderParty, storage: renderStorage, dex: renderDex, map: renderMapPage, sprays: renderSprays, shop: renderShop }[page] || renderHome)();
+  }
+  // The front page: a grid of big tiles, one for each thing the menu can do.
+  function renderHome() {
+    const tile = (attr, icon, label, color, note = '') => `<button class="tile" ${attr} style="--c:${color}"><i>${icon}</i><b>${label}</b><small>${note}</small></button>`;
+    $menu.className = 'home';
+    $menu.innerHTML = `
+      <header><h2>${esc(S.player.name)}</h2><span class="purse">${COIN}${S.money} &nbsp;·&nbsp; ${badgeCount()}/${TOTAL} badges</span></header>
+      <p class="goal"><b>Next:</b> ${esc(objective())}</p>
+      <div class="tiles">
+        ${tile('data-page="party"', '🐾', 'Creatamon', '#e8384f', `${S.party.length}/${CM.MAX_PARTY} in party`)}
+        ${tile('data-page="storage"', '📦', 'Storage', '#f08a24', `${S.storage.length} stored`)}
+        ${tile('data-page="bag"', '🎒', 'Bag', '#f5b942', 'Items and cards')}
+        ${tile('data-a="new"', '⚒', 'Forge', '#72b84a', `${S.items.creataball || 0} Creataball${S.items.creataball === 1 ? '' : 's'}`)}
+        ${tile('data-page="dex"', '📖', 'Creatadex', '#2bb6a8', `${CM.DEX.filter((m) => S.seen[m.name]).length}/${CM.DEX.length} seen`)}
+        ${tile('data-page="map"', '🗺', 'Town Map', '#3f8fe0', 'Where you have been')}
+        ${tile('data-a="wardrobe"', '👕', 'Wardrobe', '#7a6cf0', 'Change your look')}
+        ${tile('data-page="sprays"', '🎨', 'Sprays', '#c05ad6', 'Pick a design')}
+        ${tile('data-a="howto"', '❓', 'How to play', '#7d8496', 'Controls and tips')}
+        ${tile('data-a="close"', '✖', 'Close', '#3a4258', 'Esc')}
+      </div>
+      <div class="badges">${CM.GYM_ORDER.map((el) => `<span class="${S.badges[el] ? 'won' : ''}" style="--c:${ELEMENTS[el].color}" title="${el} Badge">${el}</span>`).join('')}</div>`;
+  }
+  function renderParty() {
     const heldItems = Object.keys(ITEMS).filter((id) => ITEMS[id].held);
     // An item can be given if there is a spare one that nobody else is holding.
     const spare = (id) => (S.items[id] || 0) - S.party.filter((c) => c.item === id).length;
-    const party = S.party.map((c, i) => `
+    $menu.className = '';
+    $menu.innerHTML = `${head('Creatamon')}
+      <h3>Party (${S.party.length}/${CM.MAX_PARTY}) · level limit ${CM.levelCap(badgeCount())}, raised by each badge</h3>
+      ${S.party.map((c, i) => `
       <div class="mon">
         <canvas data-sprite="${i}" width="96" height="96"></canvas>
-        <div><b>${esc(c.name)}</b> Lv ${c.level} <small>· ${CM.STAGE_NAMES[c.stage || 0]} ${c.element} ${c.shape} · ${c.hp} / ${CM.maxHp(c)} HP · ${c.xp}/${CM.xpToNext(c.level)} XP</small><br>
-          <small>${c.moves.map((id) => CARDS[id].name).join(', ')}${c.hpCards.length ? ' · ' + c.hpCards.map((id) => CARDS[id].name).join(', ') : ''}</small><br>
+        <div>${monLine(c)} <small>· ${c.xp}/${CM.xpToNext(c.level)} XP</small><br>
           <small>Holding: <select data-give="${i}"><option value="">nothing</option>${heldItems.filter((id) => c.item === id || spare(id) > 0).map((id) =>
     `<option value="${id}" ${c.item === id ? 'selected' : ''}>${ITEMS[id].name}</option>`).join('')}</select>
           ${c.item ? ITEMS[c.item].desc : (c.stage || 0) < 2 ? `Evolves at level ${CM.EVOLVE_AT[c.stage || 0]}` : ''}</small></div>
@@ -1107,49 +1283,82 @@
           ${CM.canEvolve(c) ? `<button class="plain evolve" data-a="evolve" data-i="${i}">Evolve!</button>` : ''}
           ${i ? `<button class="plain" data-a="lead" data-i="${i}">Make lead</button>` : ''}
           <button class="plain" data-a="edit" data-i="${i}">Rebuild</button>
+          ${S.party.length > 1 ? `<button class="plain" data-store="${i}">To Storage</button>` : ''}
           <button class="plain" data-a="dismantle" data-i="${i}">Dismantle</button>
         </div>
-      </div>`).join('');
-    const ids = sortedCards(S.cards);
-    $menu.innerHTML = `
-      <header><h2>${esc(S.player.name)}'s Creatamon</h2>
-        <span><button data-a="howto">How to play</button> <button data-a="wardrobe">Wardrobe</button> <button data-a="close">Close (Esc)</button></span></header>
-      <p class="goal"><b>Next:</b> ${esc(objective())}</p>
-      <div class="badges">${CM.GYM_ORDER.map((el) => `<span class="${S.badges[el] ? 'won' : ''}" style="--c:${ELEMENTS[el].color}" title="${el} Badge">${el}</span>`).join('')}</div>
-      <h3>Party (${S.party.length}/${CM.MAX_PARTY}) · level limit ${CM.levelCap(badgeCount())}, raised by each badge</h3>
-      ${party || '<p class="empty">No Creatamon yet. Forge one from your Power Cards!</p>'}
-      <button class="plain primary" data-a="new" ${S.party.length >= CM.MAX_PARTY || !S.items.creataball ? 'disabled' : ''}>＋ Forge a new Creatamon (uses 1 Creataball, you have ${S.items.creataball || 0})</button>
-      <small class="empty">Rebuilding a Creatamon also uses 1 Creataball.</small>
-      <h3>Bag</h3>
-      <div class="dex">${Object.keys(ITEMS).filter((id) => S.items[id] > 0).map((id) =>
-    `<span title="${ITEMS[id].desc}"><b>${ITEMS[id].name}</b> ×${S.items[id]} <small>${ITEMS[id].desc}</small></span>`).join('') || '<p class="empty">Empty.</p>'}</div>
-      <h3>Spray paint · press G to spray what you face</h3>
+      </div>`).join('') || '<p class="empty">No Creatamon yet. Forge one from your Power Cards!</p>'}
+      <button class="plain primary" data-a="new" ${S.items.creataball ? '' : 'disabled'}>＋ Forge a new Creatamon (uses 1 Creataball, you have ${S.items.creataball || 0})</button>
+      <small class="empty">Rebuilding also uses 1 Creataball. A party holds ${CM.MAX_PARTY}; any more go to Storage.</small>`;
+    $menu.querySelectorAll('[data-sprite]').forEach((cv) => drawCreature(cv, S.party[cv.dataset.sprite], false));
+  }
+  // Creatamon beyond the six in the party wait here.
+  function renderStorage() {
+    const full = S.party.length >= CM.MAX_PARTY;
+    $menu.className = '';
+    $menu.innerHTML = `${head('Storage')}
+      <p class="empty">Your party holds ${CM.MAX_PARTY} Creatamon. The rest rest here, and can be swapped in any time. ${full ? 'Your party is full: send one to Storage from the Creatamon page to make room.' : ''}</p>
+      ${S.storage.map((c, i) => `
+      <div class="mon">
+        <canvas data-stored="${i}" width="96" height="96"></canvas>
+        <div>${monLine(c)}</div>
+        <div class="btns"><button class="plain" data-take="${i}" ${full ? 'disabled' : ''}>To party</button></div>
+      </div>`).join('') || '<p class="empty">Nothing in Storage yet.</p>'}`;
+    $menu.querySelectorAll('[data-stored]').forEach((cv) => drawCreature(cv, S.storage[cv.dataset.stored], false));
+  }
+  function renderDex() {
+    $menu.className = '';
+    $menu.innerHTML = `${head(`Creatadex · ${CM.DEX.filter((m) => S.seen[m.name]).length}/${CM.DEX.length} seen`)}
+      <div class="dex">${CM.DEX.map((m) => (S.seen[m.name]
+    ? `<span style="border-color:${ELEMENTS[m.element].color}" title="${m.element}">${m.name} <small>${m.element}</small></span>`
+    : '<span class="unseen">???</span>')).join('')}</div>`;
+  }
+  function renderMapPage() {
+    $menu.className = '';
+    $menu.innerHTML = `${head('Town Map')}
+      <canvas id="bigmap" width="${MW * 5}" height="${MH * 5}"></canvas>
+      <p class="empty">The map fills in as you explore. White dot: you. Gold ring: your next goal. Coloured roofs are gyms.</p>`;
+    drawMap($('bigmap'));
+  }
+  function renderSprays() {
+    $menu.className = '';
+    $menu.innerHTML = `${head('Spray paint')}
+      <p class="empty">Pick a design, then press G out in the world to spray it on the ground in front of you.</p>
       <div class="sprays">${Object.keys(SPRAYS).map((id) => (S.sprayOwned[id]
     ? `<button class="${S.spray === id ? 'on' : ''}" data-spray="${id}" title="${SPRAYS[id]}"><canvas data-spraycv="${id}" width="64" height="64"></canvas></button>`
-    : '<button disabled title="Not found yet">?</button>')).join('')}</div>
-      <h3>Unused Power Cards</h3>
-      <div class="cards">${ids.map((id) => cardHTML(id, S.cards[id], '', 'div')).join('') || '<p class="empty">None. Look for sparkles and battle wild Creatamon.</p>'}</div>
-      <h3>Creatadex (${CM.DEX.filter((m) => S.seen[m.name]).length}/${CM.DEX.length} seen)</h3>
-      <div class="dex">${CM.DEX.map((m) => (S.seen[m.name]
-    ? `<span style="border-color:${ELEMENTS[m.element].color}" title="${m.element}">${m.name}</span>`
-    : '<span class="unseen">???</span>')).join('')}</div>`;
-    $menu.querySelectorAll('[data-sprite]').forEach((cv) => drawCreature(cv, S.party[cv.dataset.sprite], false));
+    : '<button disabled title="Not found yet">?</button>')).join('')}</div>`;
     $menu.querySelectorAll('[data-spraycv]').forEach((cv) => { const g = cv.getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0); drawSpray(g, cv.dataset.spraycv, 0, 0); });
   }
-  // Everything the player is carrying: items, then unused cards. Opened with E.
+  // A Creatastop: the basics, Power Cards of the town's element, and a rack of clothes.
+  function renderShop() {
+    const n = badgeCount(), can = (price) => (S.money >= price ? '' : 'disabled');
+    const goods = Object.keys(ITEMS).filter((id) => ITEMS[id].price && (ITEMS[id].need || 0) <= n);
+    const cards = Object.keys(CARDS).filter((id) => { const c = CARDS[id]; return c.tier < 4 && !c.key && CM.cardNeed(id) <= n && (c.kind === 'hp' || c.element === shop.el); });
+    const rack = shop.clothes.filter((id) => !S.wardrobe[id]);
+    const row = (kind, id, name, desc, price, have) => `<div class="ware"><div><b>${name}</b> <small>${desc}${have ? ` · you have ${have}` : ''}</small></div>
+      <button class="plain" data-buy="${kind}:${id}" ${can(price)}>${COIN}${price}</button></div>`;
+    $menu.className = '';
+    $menu.innerHTML = `<header><h2>Creatastop</h2><span><span class="purse dark">${COIN}${S.money}</span> <button data-a="close">Leave</button></span></header>
+      <p class="empty">Welcome! Coins come from beating trainers. More goods arrive as you win badges.</p>
+      <h3>Items</h3>${goods.map((id) => row('item', id, ITEMS[id].name, ITEMS[id].desc, ITEMS[id].price, S.items[id] || 0)).join('')}
+      <h3>Power Cards · ${shop.el}</h3>${cards.map((id) => row('card', id, cardLabel(id), CM.cardDesc(CARDS[id]), CM.cardPrice(id), S.cards[id] || 0)).join('')}
+      <h3>Clothes</h3>${rack.map((id) => row('wear', id, CLOTHES[id].name, { hat: 'Hat', top: 'Top', bottom: 'Bottoms' }[CLOTHES[id].slot], CM.CLOTHES_PRICE)).join('') || '<p class="empty">You have bought everything on this rack. Other towns stock different clothes.</p>'}`;
+  }
+  // Everything the player is carrying: items (potions can be used right here), then unused cards. Opened with E.
   function renderInv() {
     const ids = sortedCards(S.cards);
-    $menu.innerHTML = `
-      <header><h2>Inventory</h2><button data-a="close">Close (E)</button></header>
+    const usable = (it, c) => (it.revive ? c.hp <= 0 : it.heal ? c.hp > 0 && c.hp < CM.maxHp(c) : false);
+    $menu.className = '';
+    $menu.innerHTML = `<header><h2>Bag</h2><span><span class="purse dark">${COIN}${S.money}</span> <button data-a="home">◀ Menu</button> <button data-a="close">Close (E)</button></span></header>
       <h3>Items</h3>
-      <div class="dex">${Object.keys(ITEMS).filter((id) => S.items[id] > 0).map((id) =>
-    `<span title="${ITEMS[id].desc}"><b>${ITEMS[id].name}</b> ×${S.items[id]} <small>${ITEMS[id].desc}</small></span>`).join('') || '<p class="empty">Empty.</p>'}</div>
+      ${itemList().map((id) => `<div class="ware"><div><b>${ITEMS[id].name}</b> ×${S.items[id]} <small>${ITEMS[id].desc}</small></div>
+        ${ITEMS[id].heal || ITEMS[id].revive ? `<span class="useon">Use on ${S.party.map((c, i) =>
+    `<button class="plain" data-use="${id}" data-i="${i}" ${usable(ITEMS[id], c) ? '' : 'disabled'} title="${c.hp} / ${CM.maxHp(c)} HP">${esc(c.name)} <small>${c.hp}/${CM.maxHp(c)}</small></button>`).join('')}</span>` : ''}</div>`).join('') || '<p class="empty">Empty.</p>'}
       <h3>Unused Power Cards</h3>
       <div class="cards">${ids.map((id) => cardHTML(id, S.cards[id], '', 'div')).join('') || '<p class="empty">None. Look for sparkles and battle wild Creatamon.</p>'}</div>`;
   }
   function renderHelp() {
-    $menu.innerHTML = `
-      <header><h2>How to play</h2><button data-a="cancel">Back</button></header>
+    $menu.className = '';
+    $menu.innerHTML = `${head('How to play')}
       <dl class="howto">${HOW_TO.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
   }
   // Giving or taking a held item.
@@ -1294,6 +1503,7 @@
 
   function renderForge() {
     const { draft, avail, idx } = forge;
+    $menu.className = '';
     const egg = isEgg(draft);
     const preview = { ...draft, level: forgeLevel() };
     const st = CM.stats(preview);
@@ -1383,7 +1593,9 @@
     const art = artUp ? forge.upload : drawn ? pix.toDataURL() : null;
     S.items.creataball--;
     if (idx == null) {
-      S.party.push(Object.assign(CM.create({ ...draft, name, art }), { artUp }));
+      const made = Object.assign(CM.create({ ...draft, name, art }), { artUp });
+      if (S.party.length < CM.MAX_PARTY) S.party.push(made);
+      else { S.storage.push(made); alert(`Your party is full, so ${name} was sent to Storage.\n\nOpen Storage from the menu to swap it in.`); }
     } else {
       const c = S.party[idx];
       const before = CM.maxHp(c);
@@ -1393,15 +1605,40 @@
     }
     S.cards = avail;
     forge = null;
+    page = 'party';
     save();
     renderMenu();
   }
 
   $menu.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool],[data-w],[data-size],[data-spray]');
+    const b = e.target.closest('[data-a],[data-el],[data-shape],[data-add],[data-un],[data-look],[data-color],[data-tool],[data-w],[data-size],[data-spray],[data-page],[data-buy],[data-use],[data-store],[data-take]');
     if (!b || b.disabled) return;
     const d = b.dataset;
-    if (inv) return closeMenu();
+    if (d.a === 'home' || d.page) {
+      forge = wardrobe = shop = null;
+      help = false;
+      inv = d.page === 'bag';
+      page = d.page && d.page !== 'bag' ? d.page : 'home';
+      return renderMenu();
+    }
+    if (d.use) {
+      useItem(d.use, S.party[+d.i]);
+      save();
+      return renderMenu();
+    }
+    if (d.buy) {
+      const [kind, id] = d.buy.split(':');
+      const price = kind === 'item' ? ITEMS[id].price : kind === 'card' ? CM.cardPrice(id) : CM.CLOTHES_PRICE;
+      if (S.money < price) return;
+      S.money -= price;
+      if (kind === 'item') addItem(id); else if (kind === 'card') addCard(id); else S.wardrobe[id] = true;
+      save();
+      updateHud();
+      return renderMenu();
+    }
+    if (d.store) { S.storage.push(S.party.splice(+d.store, 1)[0]); save(); return renderMenu(); }
+    if (d.take) { if (S.party.length < CM.MAX_PARTY) S.party.push(S.storage.splice(+d.take, 1)[0]); save(); return renderMenu(); }
+    if (inv && d.a === 'close') return closeMenu();
     if (help) { help = false; return renderMenu(); }
     if (wardrobe) {
       const { draft } = wardrobe;
@@ -1494,6 +1731,7 @@
   }
   function renderWardrobe() {
     const { draft, isNew } = wardrobe;
+    $menu.className = '';
     const btn = (field, v, text, attrs = '') =>
       `<button class="plain ${draft[field] === v ? 'on' : ''}" data-w="${field}" data-v="${v}" ${attrs}>${text}</button>`;
     // A row of ready-made colours, then a picker for any colour at all.
@@ -1501,7 +1739,7 @@
       `<button data-w="${field}" data-v="${c}" class="${draft[field] === c ? 'on' : ''}" style="background:${c}"></button>`).join('')}
       <input type="color" data-wc="${field}" value="${draft[field]}" title="Any colour"></div>`;
     const slot = (name) => {
-      const items = Object.keys(CLOTHES).filter((id) => CLOTHES[id].slot === name).map((id) => {
+      const items = Object.keys(CLOTHES).filter((id) => CLOTHES[id].slot === name && (!CLOTHES[id].locked || S.wardrobe[id] || draft[name] === id)).map((id) => {
         const locked = CLOTHES[id].locked && !S.wardrobe[id];
         return btn(name, id, (locked ? '🔒 ' : '') + CLOTHES[id].name, locked ? 'disabled title="Not found yet"' : '');
       }).join('');
@@ -1515,7 +1753,7 @@
           <input id="pname" maxlength="12" placeholder="Your name..." value="${esc(draft.name)}">
           <button class="plain primary" data-a="save" ${draft.gender ? '' : 'disabled'}>${isNew ? 'Start adventure!' : 'Save look'}</button>
           ${draft.gender ? '' : '<small class="empty">Choose a gender to begin.</small>'}
-          <small class="empty">More clothes are hidden among the sparkles and won from trainers.</small>
+          <small class="empty">More clothes are sold at Creatastops, hidden among the sparkles and won from trainers. They appear here once they are yours.</small>
         </div>
         <div class="right">
           <h3>Gender</h3>
@@ -1573,25 +1811,58 @@
     if (P.blocks[k]) return (g, sx, sy) => drawProp(g, P.blocks[k], sx, sy, time);
     if (!npc) return found ? (g, sx, sy) => drawProp(g, 'sparkle', sx, sy, time, found) : null;
     return npc.kind ? (g, sx, sy) => drawProp(g, npc.kind, sx, sy, time, { taken: S.f.blade, el: npc.el, won: !!S.badges[npc.el] })
-      : (g, sx, sy) => drawPerson(g, sx, sy, npc.drawn, 'down');
+      : Object.assign((g, sx, sy) => drawPerson(g, sx, sy, npc.drawn, 'down'), { fig: true });
   };
+
+  // Painted over the view: the name of whoever the player is facing, and an arrow to the next goal. The arrow hangs
+  // over the goal when it is in sight and otherwise sits at the edge of the screen pointing the way.
+  // at(x, y, h) gives the screen position of a point h tiles above the middle of tile x, y.
+  function guide(g, at, time) {
+    const pill = (text, cx, cy, fill) => {
+      g.font = 'bold 9px "Trebuchet MS", Verdana, sans-serif';
+      const w = g.measureText(text).width + 10;
+      g.fillStyle = fill; g.beginPath(); g.roundRect(cx - w / 2, cy - 7, w, 13, 6.5); g.fill();
+      g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, cx, cy);
+    };
+    // dir: the way the arrow points, as an angle (0 = right, a quarter turn = down)
+    const arrow = (cx, cy, dir) => {
+      g.save(); g.translate(cx, cy); g.rotate(dir);
+      g.beginPath(); g.moveTo(11, 0); g.lineTo(-3, -9); g.lineTo(-3, -4); g.lineTo(-11, -4); g.lineTo(-11, 4); g.lineTo(-3, 4); g.lineTo(-3, 9); g.closePath();
+      g.lineJoin = 'round'; g.lineWidth = 4; g.strokeStyle = '#1d2437'; g.stroke();
+      g.lineWidth = 1.5; g.strokeStyle = '#fff'; g.fillStyle = '#e8384f'; g.fill(); g.stroke();
+      g.restore();
+    };
+    const fx = S.x + DIRS[S.dir][0], fy = S.y + DIRS[S.dir][1], facing = !move && npcAt(fx, fy);
+    if (facing) pill(facing.name, ...at(fx, fy, 1.95), '#1d2437e6');
+    const wp = waypoint();
+    if (!wp) return;
+    const [tx, ty] = where(), [sx, sy] = at(wp[0], wp[1], 1.9), far = Math.abs(wp[0] - S.x) + Math.abs(wp[1] - S.y);
+    const near = Math.abs(wp[0] - tx) < 9 && wp[1] - ty < 5 && ty - wp[1] < 9;
+    if (near && sx > 20 && sx < VIEW_W - 20 && sy > 46 && sy < VIEW_H - 40) {
+      if (!(facing && fx === wp[0] && fy === wp[1])) arrow(sx, sy - 6 + Math.sin(time / 220) * 3, Math.PI / 2);
+    } else {
+      const a = Math.atan2(wp[1] - ty, wp[0] - tx), cx = VIEW_W / 2 + Math.cos(a) * 196, cy = VIEW_H / 2 + 14 + Math.sin(a) * 118;
+      arrow(cx + Math.cos(a) * Math.sin(time / 220) * 3, cy + Math.sin(a) * Math.sin(time / 220) * 3, a);
+      pill(`${far} steps`, cx - Math.cos(a) * 26, cy - Math.sin(a) * 20, '#1d2437cc');
+    }
+  }
 
   function draw(time) {
     const m = MAPS[S.map], w = m.rows[0].length, h = m.rows.length;
     const [tx, ty] = where();
     // Alternate feet from one step to the next.
     const frame = move && move.n === 1 && move.t > 0.15 && move.t < 0.85 ? ((move.pts[0][0] + move.pts[0][1]) & 1) + 1 : 0;
-    const me = (g, sx, sy) => drawPerson(g, sx, sy, S.player || NEW_LOOK, S.dir, frame, S.surf);
+    const me = (g, sx, sy) => drawPerson(g, sx, sy, S.player || NEW_LOOK, S.dir, frame, S.surf, S.bike);
 
     if (gl3d) {
       // The camera follows the player but stops short of the map's edge; small rooms sit in the middle.
       const cx = w <= 15 ? w / 2 : Math.max(7.5, Math.min(w - 7.5, tx + 0.5));
       const cy = h <= 14 ? h / 2 + 1.5 : Math.max(8.5, Math.min(h - 5.5, ty + 0.5));
-      const sprites = [{ x: tx, y: ty, draw: me }];
+      const sprites = [{ x: tx, y: ty, draw: me, fig: true }];
       for (let y = Math.floor(cy) - 11; y <= Math.floor(cy) + 7; y++) {
         for (let x = Math.floor(cx) - 12; x <= Math.floor(cx) + 12; x++) {
           const fn = spriteFor(x, y, time);
-          if (fn) sprites.push({ x, y, draw: fn });
+          if (fn) sprites.push({ x, y, draw: fn, fig: fn.fig });
         }
       }
       const project = gl3d.render({ id: S.map, P, S, cx, cy, time, sprites });
@@ -1600,7 +1871,8 @@
       o.clearRect(0, 0, $overlay.width, $overlay.height);
       o.setTransform(SCALE, 0, 0, SCALE, 0, 0);
       const [sx, sy] = project(tx + 0.5, 0.7, ty + gl3d.FOOT);
-      return overlays(o, sx - 16, sy - 16, time);
+      overlays(o, sx - 16, sy - 16, time);
+      return guide(o, (x, y, up) => project(x + 0.5, up, y + 0.62), time);
     }
 
     const g = $world.getContext('2d');
@@ -1619,6 +1891,7 @@
     each((x, y, sx, sy) => { const fn = spriteFor(x, y, time); if (fn) fn(g, sx, sy); });
     me(g, px - camX, py - camY);
     overlays(g, px - camX, py - camY, time);
+    guide(g, (x, y, up) => [x * TILE - camX + 16, y * TILE - camY + 28 - up * 26], time);
   }
 
   // ---------- Input & loop ----------
@@ -1636,13 +1909,15 @@
     if (mode === 'world') {
       if (k === 'm' || k === 'escape') return openMenu();
       if (k === 'e') { inv = true; return openMenu(); }
+      if (k === 'q') return toggleBike();
       if (k === 'r') return resetPuzzle();
       if (k === 'g') return spray();
       if (confirmKey && !e.repeat) return interact();
     } else if (mode === 'menu' && inv && (k === 'escape' || k === 'e')) {
       return closeMenu();
     } else if (mode === 'menu' && k === 'escape') {
-      if (help) { help = false; renderMenu(); }
+      if (page !== 'home' && !forge && !wardrobe && !help && !shop) { page = 'home'; renderMenu(); }
+      else if (help) { help = false; renderMenu(); }
       else if (wardrobe) { if (wardrobe.isNew) return; wardrobe = null; renderMenu(); }
       else if (forge) { forge = null; renderMenu(); } else closeMenu();
       return;
@@ -1667,12 +1942,14 @@
     const s = Math.min(innerWidth / 740, innerHeight / 548, 1.75);
     $game.style.transform = `scale(${s})`;
     // Crisp pixels when the canvas is shown at or above its own resolution, smooth when shrunk.
-    $world.style.imageRendering = s * 720 >= $world.width ? 'pixelated' : 'auto';
+    $world.style.imageRendering = !gl3d && s * 720 >= $world.width ? 'pixelated' : 'auto';
   }
   addEventListener('resize', fit);
 
   function start(state) {
     S = state;
+    loadSeen(S.explored);
+    lastArea = null;
     goTo(S.map, S.x, S.y);
     // Puzzles are not saved part-way: an unfinished one starts over from the gym door.
     if (MAPS[S.map].puzzle && !isDone(S.map)) [S.x, S.y] = MAPS[S.map].entry;

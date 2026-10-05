@@ -345,22 +345,64 @@ const GFX = (() => {
 
   // ---------- People ----------
   // L is a look (see NEW_LOOK in game.js). frame: 0 standing, 1 / 2 mid-stride on either foot.
-  function drawPerson(g, sx, sy, L, dir, frame = 0, surfing = false) {
+  // The 3D view casts real shadows, and turns these painted ones off while it draws people.
+  let painted = true;
+  const shadows = (on) => { painted = on; };
+  function drawPerson(g, sx, sy, L, dir, frame = 0, surfing = false, bike = false) {
     const R = (c, a, b, w, h) => { g.fillStyle = c; g.fillRect(sx + a, sy + b, w, h); };
+    // Printed clothes are drawn as the shape they are cut from, with their design added on top.
+    const cut = (id) => CM.CLOTHES[id] || {};
+    const marks = { hat: cut(L.hat).mark, top: cut(L.top).mark, bottom: cut(L.bottom).mark };
+    L = { ...L, hat: cut(L.hat).base || L.hat, top: cut(L.top).base || L.top, bottom: cut(L.bottom).base || L.bottom };
+    // A small printed design centred on (cx, cy).
+    const mark = (m, cx, cy) => {
+      const P = (c, a, b, w, h) => R(c, cx + a, cy + b, w, h);
+      if (m === 'star') { P('#ffd24a', -0.5, -2.5, 1, 5); P('#ffd24a', -2.5, -0.5, 5, 1); P('#fff3a8', -1, -1, 2, 2); }
+      else if (m === 'heart') { P('#f0507a', -2.5, -2, 2, 2); P('#f0507a', 0.5, -2, 2, 2); P('#f0507a', -2.5, -1, 5, 2); P('#f0507a', -1.5, 1, 3, 1); P('#f0507a', -0.5, 2, 1, 1); }
+      else if (m === 'bolt') { P('#ffe24a', 0, -3, 2, 2.5); P('#ffe24a', -1.5, -1, 3, 1.5); P('#ffe24a', -1.5, 0.5, 2, 2.5); }
+      else if (m === 'flame') { P('#f47a45', -2, -1, 4, 3.5); P('#f47a45', -1, -3, 2, 2); P('#ffd24a', -1, 0, 2, 2.5); }
+      else if (m === 'wave') { for (const [a, b] of [[-3, -1.5], [-3, 1]]) { P('#bfe3fb', a, b, 2, 1); P('#f4f4f4', a + 2, b - 1, 2, 1); P('#bfe3fb', a + 4, b, 2, 1); } }
+      else if (m === 'leaf') { P('#2f9a3c', -2, -2, 4, 4); P('#8fe08a', -2, -2, 2, 2); P('#1f6a2c', -0.25, -2, 0.5, 5); }
+      else if (m === 'skull') { P('#f4f4f4', -2.5, -2.5, 5, 3.5); P('#f4f4f4', -1.5, 1, 3, 1.5); P('#1c1c28', -1.5, -1.5, 1, 1.5); P('#1c1c28', 0.5, -1.5, 1, 1.5); P('#1c1c28', -0.25, 1, 0.5, 1.5); }
+    };
     const whiteTop = ['scout_vest', 'overalls', 'labcoat'].includes(L.top);
     const top = whiteTop ? '#f4f4f4' : L.topColor, topDark = shade(top, 0.75), topLite = shade(top, 1.08);
     const tc = L.topColor, bc = L.bottomColor, bcDark = shade(bc, 0.75);
     const skinDark = shade(L.skin, 0.85), hairLite = shade(L.hair, 1.2), hairDark = shade(L.hair, 0.7);
-    if (surfing) {
+    if (bike) {
+      // The bike: seen side-on when riding left or right, end-on otherwise. On water it sits on a pair of floats.
+      const side = dir === 'left' || dir === 'right', spin = frame ? 1 : 0;
+      const wheel = (cx, cy, r) => {
+        g.fillStyle = '#1c1c28'; g.beginPath(); g.arc(sx + cx, sy + cy, r, 0, 7); g.fill();
+        g.fillStyle = '#c9ced8'; g.beginPath(); g.arc(sx + cx, sy + cy, r - 1.3, 0, 7); g.fill();
+        g.fillStyle = '#1c1c28'; g.fillRect(sx + cx - (spin ? 0.3 : r - 1.3), sy + cy - (spin ? r - 1.3 : 0.3), spin ? 0.6 : (r - 1.3) * 2, spin ? (r - 1.3) * 2 : 0.6);
+      };
+      if (surfing) {
+        g.fillStyle = '#ffffff66'; g.beginPath(); g.ellipse(sx + 16, sy + 30, 16, 3.5, 0, 0, 7); g.fill();
+        for (const x of side ? [16] : [9, 23]) { g.fillStyle = '#f5b942'; g.beginPath(); g.ellipse(sx + x, sy + 29.5, side ? 14 : 4, 2.6, 0, 0, 7); g.fill(); g.fillStyle = '#fff3a8'; g.beginPath(); g.ellipse(sx + x, sy + 28.8, side ? 11 : 2.5, 1, 0, 0, 7); g.fill(); }
+      } else if (painted) { g.fillStyle = '#0003'; g.beginPath(); g.ellipse(sx + 16, sy + 30.5, side ? 14 : 8, 2.2, 0, 0, 7); g.fill(); }
+      if (side) {
+        const f = dir === 'left' ? -1 : 1;
+        wheel(16 - 9, 25.5, 5); wheel(16 + 9, 25.5, 5);
+        g.strokeStyle = '#e0483c'; g.lineWidth = 1.6; g.lineCap = 'round'; g.beginPath();
+        g.moveTo(sx + 16 - 9 * f, sy + 25.5); g.lineTo(sx + 16 - 2 * f, sy + 19); g.lineTo(sx + 16 + 6 * f, sy + 19); g.lineTo(sx + 16 + 9 * f, sy + 25.5);
+        g.moveTo(sx + 16 - 2 * f, sy + 19); g.lineTo(sx + 16 + 1 * f, sy + 25.5); g.lineTo(sx + 16 - 9 * f, sy + 25.5);
+        g.moveTo(sx + 16 + 6 * f, sy + 19); g.lineTo(sx + 16 + 7 * f, sy + 15.5); g.stroke();
+        R('#1c1c28', 16 + 5.5 * f - 1.5, 14.5, 4, 1.4);
+      } else {
+        wheel(16, 26, 4.6); R('#1c1c28', 14.6, 21, 2.8, 10);
+        R('#e0483c', 15.2, 16, 1.6, 8); R('#1c1c28', 8, 15, 16, 1.5); R('#8a94a6', 7, 14.5, 2.5, 2.5); R('#8a94a6', 22.5, 14.5, 2.5, 2.5);
+      }
+    } else if (surfing) {
       g.fillStyle = '#ffffff66'; g.beginPath(); g.ellipse(sx + 16, sy + 27, 15, 5, 0, 0, 7); g.fill();
       g.fillStyle = '#55a8ee'; g.beginPath(); g.ellipse(sx + 16, sy + 25, 13, 6, 0, 0, 7); g.fill();
       g.fillStyle = '#74b8f0'; g.beginPath(); g.ellipse(sx + 13, sy + 23, 6, 2, 0, 0, 7); g.fill();
       R('#fff', 6, 23, 2, 2); R('#1c1c28', 6.5, 23.5, 1, 1);
-    } else {
+    } else if (painted) {
       g.fillStyle = '#0003'; g.beginPath(); g.ellipse(sx + 16, sy + 29.5, 9, 2.5, 0, 0, 7); g.fill();
     }
     if (L.top === 'champion_cape') { R('#7a3fc4', 5, 14, 22, 14); R('#5d2c9c', 5, 26.5, 22, 1.5); R('#8a50d0', 5, 14, 1, 14); }
-    if (!surfing) {
+    if (!surfing || bike) {
       const trousers = ['pants', 'jeans', 'leggings', 'joggers'].includes(L.bottom);
       [[10, frame === 1], [17, frame === 2]].forEach(([x, lifted]) => {
         const len = lifted ? 5 : 7;
@@ -375,6 +417,16 @@ const GFX = (() => {
         R('#1c1c28', x, 20 + len, 5, 2); R('#d8d8d8', x, 21.5 + len, 5, 0.5); R('#3a3a52', x + 0.5, 20 + len, 2, 1 / 3);
       });
       if (L.bottom === 'skirt') { R(bc, 8, 22, 16, 5); R(bcDark, 8, 26, 16, 1); for (const x of [11, 15, 19]) R(bcDark, x, 23, 0.5, 3); }
+      if (marks.bottom) {
+        const skirt = L.bottom === 'skirt', low = skirt ? 26 : L.bottom === 'shorts' ? 25 : 27.5;
+        const legs = skirt ? [[8, 16]] : [[10, 5], [17, 5]];
+        legs.forEach(([x, w], i) => {
+          if (marks.bottom === 'stripe') R('#f4f4f4', skirt ? x : x + (i ? w - 1.2 : 0), 22, skirt ? w : 1.2, skirt ? 1 : low - 22);
+          else if (marks.bottom === 'flame') { R('#f47a45', x, low - 2, w, 2); for (let a = x; a < x + w; a += 2) R('#ffd24a', a + 0.5, low - 3, 1, 1.5); }
+          else if (marks.bottom === 'star') for (let a = x + 1; a < x + w; a += 3.5) { R('#ffd24a', a, 23.2 + (a % 2), 1, 1); R('#ffd24a', a + 1.5, 25 - (a % 2), 0.8, 0.8); }
+          else if (marks.bottom === 'camo') for (let a = x; a < x + w - 1; a += 2.5) { R(bcDark, a, 22.6 + (a % 2) * 1.6, 1.8, 1.2); R(shade(bc, 1.25), a + 0.8, 24.6 - (a % 2), 1.4, 1); }
+        });
+      }
       if (L.bottom === 'long_skirt') { R(bc, 8, 22, 16, 7.5); R(bcDark, 8, 28.5, 16, 1); for (const x of [10.5, 14, 17.5, 21]) R(bcDark, x, 23, 1 / 3, 5.5); }
     }
     // Arms, swinging with the stride.
@@ -429,6 +481,8 @@ const GFX = (() => {
         break;
     }
 
+    if (marks.top === 'rainbow') ['#e0483c', '#f5b942', '#72cc5c', '#55a8ee', '#9b3fd6'].forEach((c, n) => R(c, 8, 15.5 + n * 1.3, 16, 1.3));
+    else if (marks.top && dir !== 'up') mark(marks.top, 16, 19);
     R(L.skin, 9, 3, 14, 11); R(skinDark, 9, 13, 14, 1); R(skinDark, 22, 4, 1, 9);
     const H = (a, b, w, h) => R(L.hair, a, b, w, h);
     if (L.hairStyle !== 'bald') {
@@ -499,7 +553,24 @@ const GFX = (() => {
       case 'cat_ears': for (const x of [9, 19]) { R(hc, x, -1, 4, 4); R(hc, x + 1, -2.5, 2, 2); R('#f08aa0', x + 1.25, 0, 1.5, 2); } break;
       case 'pirate': R('#1c1c28', 7, 0, 18, 5); R('#1c1c28', 9.5, -3, 13, 3.5); R('#3a3a52', 7, 4, 18, 1); R('#e9e2cf', 15, -0.5, 2, 2); R('#e9e2cf', 14, 2, 4, 2 / 3); R('#e9e2cf', 15.5, 1.5, 1, 2); break;
       case 'halo': R('#f1c93a', 10, -5, 12, 1.5); R('#f1c93a', 9, -4.5, 1.5, 2); R('#f1c93a', 21.5, -4.5, 1.5, 2); R('#f1c93a', 10, -3, 12, 1); R('#fff3a8', 12, -4.75, 6, 1 / 3); break;
+      case 'party_hat': R(hc, 12, -1, 8, 4); R(hc, 13.5, -4, 5, 3); R(hc, 15, -7, 2, 3); R(hl, 12, 1, 8, 0.7); R('#f4f4f4', 14.5, -9, 3, 2.5); R(hd, 12, 2.5, 8, 0.5); break;
+      case 'bunny_ears': for (const x of [10, 18]) { R(hc, x, -8, 4, 10); R('#f8c6d4', x + 1.2, -6.5, 1.6, 7); } R(hc, 9, 2, 14, 1.5); break;
+      case 'horns': for (const [x, f] of [[8, 1], [21, -1]]) { R('#e9e2cf', x, 0, 3, 3); R('#e9e2cf', x + (f > 0 ? 0 : 1), -3, 2, 3); R('#c9bfa3', x + (f > 0 ? 0 : 2), -5, 1, 2); } break;
+      case 'antenna': R('#2c2c3c', 8, 1, 16, 1.5); R('#8a94a6', 15.5, -6, 1, 7); R('#e0483c', 14.5, -8.5, 3, 3); R('#ff9a8f', 15, -8, 1, 1); break;
+      case 'chef_hat': R('#f4f4f4', 9, 0, 14, 5); R('#f4f4f4', 7.5, -6, 17, 6.5); R('#dcdcdc', 12, -5, 0.5, 5); R('#dcdcdc', 16, -5, 0.5, 5); R('#dcdcdc', 20, -5, 0.5, 5); R('#cfcfcf', 9, 4.5, 14, 0.5); break;
+      case 'viking': R('#8a94a6', 8, 0, 16, 5); R('#566070', 8, 4.3, 16, 0.7); R('#c9ced8', 10, 0.5, 5, 0.6); R('#f1c93a', 15, 0, 2, 5); for (const [x, f] of [[4.5, 1], [24.5, -1]]) { R('#e9e2cf', x, 0, 3, 3); R('#e9e2cf', x + (f > 0 ? 0 : 1), -3.5, 2, 3.5); } break;
+      case 'tiara': R('#f1c93a', 10, 2.5, 12, 1.5); R('#f1c93a', 15, -0.5, 2, 3); R('#f1c93a', 11.5, 1, 1.5, 1.5); R('#f1c93a', 19, 1, 1.5, 1.5); R('#f29ad0', 15.4, 0.3, 1.2, 1.2); break;
+      case 'propeller': R(hc, 8, 0, 16, 5); R(hd, 8, 4.5, 16, 0.5); R(hl, 12, 0, 0.6, 4.5); R(hl, 19.4, 0, 0.6, 4.5); R('#2c2c3c', 15.5, -3, 1, 3); R('#e0483c', 9, -4, 6.5, 1.5); R('#55a8ee', 16.5, -4, 6.5, 1.5); break;
+      case 'mushroom': R(hc, 6, 0, 20, 5.5); R(hc, 8, -3, 16, 3); R(hc, 11, -5, 10, 2); R(hd, 6, 5, 20, 0.6); for (const [a, b] of [[9, -1], [15, -3.5], [20, 0.5], [12.5, 2]]) R('#f4f4f4', a, b, 2.5, 2); break;
+      case 'santa': R('#e0483c', 8, -1, 16, 5); R('#e0483c', 12, -5, 11, 4); R('#e0483c', 19, -8, 6, 3.5); R('#f4f4f4', 7, 3.5, 18, 2.5); R('#f4f4f4', 23.5, -9.5, 3.5, 3.5); R('#c0352c', 8, 3, 16, 0.5); break;
+      case 'feather': R(hc, 9, 3.5, 14, 2); R(hd, 9, 5, 14, 0.5); R('#f4f4f4', 19, -6, 2.5, 10); R('#e0483c', 19, -6, 2.5, 3); R('#cfcfcf', 20, -5, 0.5, 9); break;
+      case 'goggles': R('#3a2412', 8, 3.5, 16, 1.5); for (const x of [9.5, 16.5]) { R('#8a6a3b', x, 1.5, 6, 5); R('#bfe3fb', x + 1, 2.5, 4, 3); R('#f4f4f4', x + 1.3, 2.8, 1.3, 1); } break;
+      case 'bandana': R(hc, 8.5, 0, 15, 5.5); R(hd, 8.5, 5, 15, 0.5); for (const [a, b] of [[11, 1.5], [15, 3], [19, 1.5]]) R('#f4f4f4', a, b, 1.2, 1.2); if (dir !== 'down') { R(hc, back + 1, 4.5, 2.5, 4); R(hd, back + 1, 8, 2.5, 0.5); } break;
+      case 'fez': R('#c0352c', 11, -4, 10, 8); R('#a02a22', 11, 3.3, 10, 0.7); R('#e25a4c', 11.6, -3.5, 1, 7); R('#f1c93a', 15.5, -5, 1, 1.5); R('#f1c93a', 16, -5, 5, 0.6); R('#f1c93a', 20.5, -5, 0.8, 5); break;
+      case 'sombrero': R('#e3c98a', 2.5, 3.5, 27, 2.5); R('#c9a95f', 2.5, 5.5, 27, 0.6); R('#e3c98a', 10.5, -4, 11, 8); R('#e0483c', 10.5, 1.5, 11, 1.4); R('#2f7a2c', 10.5, 0.6, 11, 0.7); for (let x = 4; x < 28; x += 3) R('#e0483c', x, 4.2, 1.2, 1.2); break;
+      case 'jester': R(hc, 8, 1, 16, 4.5); R(hd, 8, 5, 16, 0.5); R(hc, 5, -3, 6, 5); R(hc, 21, -3, 6, 5); R(hl, 13, -5, 6, 6.5); for (const [a, b] of [[4.5, -5], [25.5, -5], [15, -7]]) R('#f1c93a', a, b, 2, 2); break;
     }
+    if (marks.hat && dir === 'down') mark(marks.hat, 16, L.hat === 'tophat' ? -3 : L.hat === 'headband' ? 5 : 2);
   }
 
   // Things that stand on a tile but are not people.
@@ -524,6 +595,14 @@ const GFX = (() => {
       R(dark, 17.5, -2, 14, 15); R(color, 17.5, -1 + wave * 0.3, 13, 13); R(shade(color, 1.25), 17.5, -1 + wave * 0.3, 13, 2);
       g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(sx + 24, sy + 2 + wave * 0.3); g.lineTo(sx + 28, sy + 6 + wave * 0.3); g.lineTo(sx + 24, sy + 10 + wave * 0.3); g.lineTo(sx + 20, sy + 6 + wave * 0.3); g.fill();
       R(dark, 17.5, 13, 4, 3 + wave); R(dark, 26.5, 13, 4, 3 - wave);
+    } else if (kind === 'stop') {
+      // A Creatastop: a market stall under a striped awning, with goods on the counter.
+      R('#0003', 1, 28, 30, 3); R('#6b4a2b', 2, 6, 2, 24); R('#6b4a2b', 28, 6, 2, 24);
+      R('#8a5a2b', 2, 18, 28, 11); R('#a9744a', 2, 18, 28, 2); R('#6b4a2b', 2, 28, 28, 1);
+      for (let i = 0; i < 7; i++) R(i % 2 ? '#f4f4f4' : '#e8384f', i * 4.6, -3, 4.6, 9);
+      for (let i = 0; i < 7; i++) { g.fillStyle = i % 2 ? '#dcdcdc' : '#b82a3c'; g.beginPath(); g.arc(sx + i * 4.6 + 2.3, sy + 6, 2.3, 0, Math.PI); g.fill(); }
+      R('#f08aa0', 6, 13, 4, 5); R('#fff', 7, 12, 2, 1.5); R('#e0483c', 13, 14, 5, 4); R('#f4f4f4', 13, 15.7, 5, 0.8); R('#55a8ee', 21, 13, 5, 5); R('#ffd24a', 22.5, 14.5, 2, 2);
+      R('#ffd24a', 12, 21, 8, 5); R('#1d2437', 13.2, 22.3, 5.6, 2.4);
     } else if (kind === 'C') {
       R('#0003', 3, 27, 26, 4); R('#566070', 4, 6, 24, 23); R('#8a94a6', 5.5, 7.5, 21, 20); R('#6c7688', 5.5, 24, 21, 3.5);
       R('#566070', 4, 16, 24, 2); R('#566070', 15, 6, 2, 23);
@@ -866,5 +945,5 @@ const GFX = (() => {
     });
   }
 
-  return { drawTile, drawUp, drawPerson, drawProp, drawCreature, drawSpray, playFx, shade, tileHash, UPRIGHT, SPRAYS };
+  return { shadows, drawTile, drawUp, drawPerson, drawProp, drawCreature, drawSpray, playFx, shade, tileHash, UPRIGHT, SPRAYS };
 })();
