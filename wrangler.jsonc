@@ -1,0 +1,12 @@
+// Cloudflare deploy: a static site, served as a Worker with static assets only (no Worker script).
+// `npm run deploy` builds into dist/ and uploads it.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "creatamon",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./dist" },
+  // Served at creatamon.<your account>.workers.dev.
+  "workers_dev": true,
+  // No per-version preview URLs: only the deployed version is reachable.
+  "preview_urls": false
+}

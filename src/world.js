@@ -1,4 +1,6 @@
 // Creatamon world: the overworld, gym interiors and their puzzles, and everyone you meet. No DOM.
+import { CM } from './core.js';
+
 ((CM) => {
   const MAPS = {}, WARPS = {}, TINT = {}, AREAS = [], CHESTS = [], NPCS = [];
   const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
@@ -907,5 +909,5 @@
     STOPS, STOP_AT, MAPS, WARPS, TINT, AREAS, CHESTS, NPCS, GYMS, TEAMS, LOOKS, START, DIRS, GATE, GYM_ORDER, NICKS, makeTeam, gymTeam, gymDoor,
     badgeCount, charAt, gateOpen, passable, groundAt, areaAt, initPuzzle, checkSolved, step, arrive, toggleFire, teleAt, GUSTS,
   });
-})(typeof module !== 'undefined' ? require('./core.js') : CM);
-if (typeof module !== 'undefined') module.exports = require('./core.js');
+})(CM);
+export { CM };

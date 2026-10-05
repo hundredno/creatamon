@@ -1,6 +1,6 @@
 // Run with: node test/core.test.js
-const assert = require('assert');
-const CM = require('../js/world.js');
+import assert from 'node:assert';
+import { CM } from '../src/world.js';
 
 const { MAPS, NPCS, CHESTS, GYMS, TEAMS, CARDS, SPECIES } = CM;
 const DIRS = Object.keys(CM.DIRS);

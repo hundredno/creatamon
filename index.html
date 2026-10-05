@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Creatamon</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
   <div id="game">
@@ -48,12 +48,8 @@
       <button id="btnContinue" hidden>Continue</button>
       <button id="btnNew">New Game</button>
     </div>
+    <div id="ver">%APP_VERSION%</div>
   </div>
-  <script src="js/sfx.js"></script>
-  <script src="js/core.js"></script>
-  <script src="js/world.js"></script>
-  <script src="js/draw.js"></script>
-  <script src="js/gl.js"></script>
-  <script src="js/game.js"></script>
+  <script type="module" src="/src/game.js"></script>
 </body>
 </html>

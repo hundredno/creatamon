@@ -150,3 +150,5 @@ vite.config.ts.timestamp-*
 
 
 ref/
+# Wrangler local state
+.wrangler/
