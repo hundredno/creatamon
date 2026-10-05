@@ -253,7 +253,7 @@
     $menu.className = '';
     $menu.innerHTML = `${head('Developer mode')}
       <p class="empty">Testing tools. At ${S.map} ${S.x},${S.y} · ${badgeCount()} badges · ${S.alphaWins || 0} alpha wins · next: ${esc(objective())}</p>
-      <h3>Switches</h3><div class="pick">${sw('noWild', 'No wild battles or alphas')}${sw('noclip', 'Walk through walls')}${sw('ohko', 'One-hit wins')}</div>
+      <h3>Switches</h3><div class="pick">${sw('noWild', 'No wild battles or alphas')}${sw('noclip', 'Walk through walls (not people)')}${sw('ohko', 'One-hit wins')}</div>
       <h3>Story</h3><div class="pick">${b('skip', 'Complete the current objective')}${b('skipall', 'Skip to the Champion match')}${b('alphawin', '+1 alpha win')}${b('alpha', 'Spawn an alpha nearby')}</div>
       <h3>Give</h3><div class="pick">${b('heal', 'Heal party')}${b('coins', `+${COIN}5000`)}${b('balls', '+10 Creataballs')}${b('potions', '+10 of each potion')}${b('cards', 'One of every card')}${b('health', '+10 Titan Hearts')}${b('clothes', 'All clothes')}${b('level', 'Lead to the level limit')}${b('map', 'Reveal the map')}</div>
       <h3>Teleport</h3><div class="pick">${TOWNS.map(([name, x, y]) => b('tp', name, `${x},${y}`)).join('')}</div>`;
@@ -438,7 +438,9 @@
   function updateHud() {
     const name = CM.areaAt(S.map, S.x, S.y).name;
     $('area').textContent = name;
-    $('coins').textContent = `${badgeCount()}/${TOTAL} badges · ${COIN}${S.money}`;
+    // Any developer switch left on is spelled out, so it cannot be mistaken for how the game normally behaves.
+    const cheats = S.dev ? [['noclip', 'walls off'], ['noWild', 'no wilds'], ['ohko', 'one-hit wins']].filter(([k]) => S.dev[k]).map(([, text]) => text) : [];
+    $('coins').textContent = `${badgeCount()}/${TOTAL} badges · ${COIN}${S.money}${cheats.length ? ` · DEV: ${cheats.join(', ')}` : ''}`;
     $('goal').textContent = objective();
     // Walking into somewhere new announces it.
     if (name !== lastArea) {
@@ -483,8 +485,9 @@
     const afloat = S.bike && S.f.hydro && !S.surf && CM.charAt(S.map, S.x + DIRS[dir][0], S.y + DIRS[dir][1]) === '~';
     if (afloat) S.surf = true;
     let res = CM.step(S.map, P, S, S.x, S.y, dir, blocked);
-    // Developer mode: walk through anything.
-    if (!res && S.dev && S.dev.noclip && MAPS[S.map].rows[S.y + DIRS[dir][1]] && MAPS[S.map].rows[S.y + DIRS[dir][1]][S.x + DIRS[dir][0]]) {
+    // Developer mode: walk through walls, water and locked gates. People still stand in the way.
+    if (!res && S.dev && S.dev.noclip && !blocked(S.x + DIRS[dir][0], S.y + DIRS[dir][1])
+      && MAPS[S.map].rows[S.y + DIRS[dir][1]] && MAPS[S.map].rows[S.y + DIRS[dir][1]][S.x + DIRS[dir][0]]) {
       res = { path: [[S.x + DIRS[dir][0], S.y + DIRS[dir][1]]], n: 1 };
     }
     if (res) move = { pts: [[S.x, S.y], ...res.path], t: 0, n: res.n };
