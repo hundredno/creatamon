@@ -131,8 +131,10 @@ After the Ice gym Wren fits it with floats, and from then on it rides straight o
 - Beating one earns coins, a sure Power Card and **Champion rank**. There are seven tiers of three steps each: Alpha,
   King, Emperor, Conqueror, Warlord, Legend and Mythic (I, II, III). Each tier costs more wins per step than the last:
   Alpha I takes 2 alpha wins, King I 9, Emperor I 19, Conqueror I 32, Warlord I 48, Legend I 67, Mythic III 105.
-- The Champion only accepts challengers ranked **King I** or higher (9 alpha wins). Beating him makes you **Champion I**,
-  and every five alphas after that adds a numeral: Champion II, III, IV, V... without end.
+- The Champion only accepts challengers ranked **Warlord I** or higher (48 alpha wins), on top of all fourteen badges. Beating him unlocks the
+  **Champion** title, the highest rank, above Legend and Mythic: Champion I comes at 110 alpha wins (five past Mythic
+  III), and every five alphas after that adds a numeral: Champion II, III, IV, V... without end. Without beating him,
+  the ladder stops at Mythic III.
 - Stand still for three seconds and your title appears above your head. It is also on your Trainer Card.
 - In the 3D view long grass stands up out of the ground, and you wade through it.
 
@@ -184,14 +186,39 @@ You can keep the generated look, pick **Draw my own** in the Forge and paint a 3
 and a button to start from the generated look), or pick **Upload image**
 to use any picture from your device (it is shrunk to 128px and kept in your save).
 
-| Tier | Examples |
+| Rarity | Examples |
 | --- | --- |
-| ★ Common | Tackle, Ember, Vitality Shard (+30 HP) |
-| ★★ Rare | Aqua Jet, Mend, Rock Smash, Surf, Vitality Core (+100 HP) |
-| ★★★ Epic | Tsunami Blast, Hyper Burst, Titan Heart (+250 HP) |
+| ★ Common | Tackle, Ember, Quick Jab, Leech Sprout, Vitality Shard (+30 HP) |
+| ★★ Rare | Aqua Jet, Mend, Rock Smash, Surf, Kindle, Fury Flurry, Vitality Core (+100 HP) |
+| ★★★ Epic | Tsunami Blast, Hyper Burst, Boulder Crash, Rally Cry, Titan Heart (+250 HP) |
+| ★★★★ Legendary | Phoenix Dive, Stampede, Jetstream Lance, Colossus Heart (+400 HP) |
+| ★★★★★ Mythic | Genesis Strike, Worldfire, Void Requiem, Eternal Heart (+600 HP) |
 
-Cards come from sparkles, trainers, Gym Leaders, and drops from wild Creatamon (later routes drop better tiers).
-Rebuilding a Creatamon at the Forge costs a Creataball, and dismantling one returns its cards.
+Every element has a move of every rarity. Cards come from sparkles, trainers, Gym Leaders, and drops from wild
+Creatamon (later routes drop better tiers). Rebuilding a Creatamon at the Forge costs a Creataball, and dismantling one
+returns its cards.
+
+- **Legendary** cards drop from alphas (one in ten) and, rarely, from wild Creatamon on the last routes. With twelve
+  badges, Creatastops sell the Legendary move of their element and Colossus Heart.
+- **Mythic** cards are never sold. Beating the Champion gives the Mythic move of your lead Creatamon's element, and
+  once you are Champion, one alpha in thirty drops one.
+
+Many moves do more than hit:
+
+| Effect | What it does |
+| --- | --- |
+| Strikes first | Goes before a move without it, whatever the speeds |
+| Pow 25×3 | Strikes several times, each hit rolled on its own |
+| Drains | Heals the user by a share of the damage dealt |
+| Recoil | The user takes a share of the damage dealt |
+| Crit | Lands critical hits that often |
+| Self ATK+1, Foe DEF−1, ... | Raises the user's or lowers the foe's Attack, Defence or Speed by stages (25% a stage, up to three) |
+| Burns, Poisons | The foe loses a tenth of its max HP at the end of every turn |
+| (30%) | The chance of the effects before it |
+
+Moves with no power (Kindle, Snarl, Noxious Fumes, ...) only have their effect. Stages, burns and poison wear off when a
+Creatamon leaves the battle. The battle screen shows them next to its level, e.g. `ATK+2 · PSN`. In Max Mode the Max
+move comes from the strongest attack (counting every hit), and moves with no power stay as they are.
 
 ## Wild Creatamon
 

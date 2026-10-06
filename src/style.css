@@ -125,15 +125,19 @@ button { font: inherit; cursor: pointer; }
 .mon .btns button { font-size: 12px; padding: 2px 8px !important; }
 .cards { display: flex; flex-wrap: wrap; gap: 7px; }
 .card {
-  position: relative; width: 106px; height: 84px; padding: 5px 6px; text-align: left;
+  position: relative; width: 106px; min-height: 84px; padding: 5px 6px; text-align: left;
   border: 3px solid #a9744a; border-radius: 8px; background: linear-gradient(160deg, #f6e3cf, #dcae86);
   border-top-width: 9px;
 }
 .card.t2 { border-color: #7d8a9c; background: linear-gradient(160deg, #f4f7fb, #b9c4d4); }
-.card.t4 { border-color: #3d0f5e; color: #fff; background: linear-gradient(160deg, #5b1d8a, #1c1c28); box-shadow: 0 0 8px #9b3fd6; }
-.card.t4 .tier, .card.t4 small { color: #fffc; }
 .card.t3 { border-color: #c79a12; background: linear-gradient(160deg, #fff7c9, #f1c93a); box-shadow: 0 0 8px #f1c93a; }
-.card .tier { display: block; font-size: 10px; text-transform: uppercase; color: #0009; }
+/* Legendary burns orange; Mythic is prismatic. */
+.card.t4 { border-color: #b5361f; background: linear-gradient(160deg, #ffe9cc, #ffa65e 55%, #f2653c); box-shadow: 0 0 9px #ff7a3a; }
+.card.t5 { border-color: #7a3fc4; background: linear-gradient(135deg, #ffe0f4, #d9e8ff 30%, #dcffe3 55%, #fff4c4 78%, #f3dcff); box-shadow: 0 0 10px #b98cff, inset 0 0 0 1px #fff; }
+.card.t4 .tier, .card.t5 .tier { letter-spacing: -.04em; }
+.card.t6 { border-color: #3d0f5e; color: #fff; background: linear-gradient(160deg, #5b1d8a, #1c1c28); box-shadow: 0 0 8px #9b3fd6; }
+.card.t6 .tier, .card.t6 small { color: #fffc; }
+.card .tier { display: block; font-size: 10px; text-transform: uppercase; color: #0009; white-space: nowrap; }
 .card b { display: block; font-size: 14px; line-height: 1.15; }
 .card small { font-size: 10.5px; line-height: 1.2; display: block; color: #000a; }
 .card em { position: absolute; right: 5px; bottom: 3px; font-style: normal; font-weight: bold; font-size: 13px; }
@@ -275,6 +279,9 @@ button { color: inherit; }
 #actions.menu .movelist button:hover:not(:disabled) { background: #fff3c4; transform: translateX(-6px); }
 #actions.menu .movelist button.back { height: 30px; background: #1d2437f2; color: #fff; border-left-width: 0; text-align: center; }
 #actions.menu .movelist small { color: #5a647c; }
+/* A move with effects can need a second line to describe. */
+#actions.menu .movelist button:not(.back) { height: auto; min-height: 42px; }
+#actions.menu .movelist small { white-space: normal; }
 
 /* ---- Menu pages ---- */
 #menu { background: #eef1f6; padding: 16px 22px; }

@@ -38,7 +38,7 @@ import { GL3D } from './gl.js';
     cards: {}, party: [], chests: {}, beaten: {}, f: {}, badges: {}, smashed: {}, solved: {}, quiz: 0,
     player: null, wardrobe: {}, seen: {},
     items: {}, sprays: {}, sprayOwned: { star: true, smile: true }, spray: 'star', tips: {},
-    money: 0, storage: [], explored: '', alphaWins: 0, champAt: null, dev: null,
+    money: 0, storage: [], explored: '', alphaWins: 0, dev: null,
     stats: { wins: 0, trainers: 0, steps: 0, time: 0, shinies: 0 }, trophies: {}, visited: {}, daily: null, streak: 0, trials: {},
   });
   // packSeen: the explored map, defined with the minimap below.
@@ -52,8 +52,6 @@ import { GL3D } from './gl.js';
         // Saves from before the bike: it comes with the endorsement, and its floats with Surf.
         if (s.f && s.f.endorsed) s.f.bike = true;
         if (s.f && s.f.surf) s.f.hydro = true;
-        // Champions from before Champion rank had numerals start counting from here.
-        if (s.f && s.f.champion && s.champAt == null) s.champAt = s.alphaWins || 0;
         return { ...newState(), ...s };
       }
       if (!s) return s;
@@ -64,17 +62,17 @@ import { GL3D } from './gl.js';
       kept.f.start = kept.party.length > 0 || Object.keys(kept.cards).length > 0;
       // The easter egg now needs the right element and body too; without them its bound cards fall away.
       kept.party.filter((c) => !CM.isEgg(c)).forEach((c) => {
-        c.moves = c.moves.filter((id) => CARDS[id].tier !== 4);
+        c.moves = c.moves.filter((id) => CARDS[id].tier !== CM.SECRET);
         if (!c.moves.length) c.moves = ['tackle'];
       });
       return kept;
     } catch (e) { return null; }
   };
   const addCard = (id, n = 1) => { S.cards[id] = (S.cards[id] || 0) + n; };
-  const cardLabel = (id) => `${'★'.repeat(CARDS[id].tier)} ${CARDS[id].name}`;
+  const cardLabel = (id) => `${CM.stars(CARDS[id])} ${CARDS[id].name}`;
   const healAll = () => S.party.forEach((c) => { c.hp = CM.maxHp(c); });
   const badgeCount = () => CM.badgeCount(S);
-  const myTitle = () => CM.title(S.alphaWins, S.f.champion, S.champAt);
+  const myTitle = () => CM.title(S.alphaWins, S.f.champion);
   const isDone = (id) => !!(S.solved[id] || (MAPS[id].el && S.badges[MAPS[id].el]));
 
   // ---------- Dialog ----------
@@ -113,8 +111,10 @@ import { GL3D } from './gl.js';
   const giveCards = async (ids) => {
     for (const id of ids) {
       addCard(id);
-      SFX.play('item');
-      await say(`You got a Power Card: ${cardLabel(id)}! (${CM.cardDesc(CARDS[id])})`);
+      // Legendary and Mythic finds get a fanfare and their rarity named.
+      const big = CARDS[id].tier >= 4;
+      SFX.play(big ? 'badge' : 'item');
+      await say(`You got a ${big ? `${CM.TIER_NAMES[CARDS[id].tier]} ` : ''}Power Card: ${cardLabel(id)}! (${CM.cardDesc(CARDS[id])})`);
     }
   };
   const addItem = (id, n = 1) => { S.items[id] = (S.items[id] || 0) + n; };
@@ -155,7 +155,7 @@ import { GL3D } from './gl.js';
   const alphas = [];
   const ALPHA_MAX = 2, ALPHA_SIGHT = 6, ALPHA_WALK = 430, ALPHA_RUN = 165;
   // How often a new one may turn up (ms), and the chance that it does.
-  const ALPHA_EVERY = 5000, ALPHA_CHANCE = 0.3;
+  const ALPHA_EVERY = 5000, ALPHA_CHANCE = 0.4;
   let alphaSpawn = 0;
   const isGrass = (x, y) => { const ch = CM.charAt('world', x, y); return ch !== '~' && !!CM.ZONE_OF[ch]; };
   const grassNear = (x, y, r) => { for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (isGrass(x + i, y + j)) return [x + i, y + j]; return null; };
@@ -231,10 +231,10 @@ import { GL3D } from './gl.js';
       S.alphaWins = (S.alphaWins || 0) + 1;
       S.money += coins;
       await say(`You defeated an alpha! That is ${S.alphaWins} so far. You found ${COIN}${coins} where it fell.`);
-      await giveCards([CM.rollDrop(CM.areaAt('world', S.x, S.y).drops || [40, 45, 15], Math.random, true)]);
+      await giveCards([CM.alphaDrop(CM.areaAt('world', S.x, S.y).drops || [40, 45, 15], !!S.f.champion)]);
       const now = myTitle();
       if (now !== before) await sayAll([`Your Champion rank rose to ${now}!`, 'Stand still for a few seconds and your title shows above your head.']);
-      else { const next = CM.nextRank(S.alphaWins, S.f.champion, S.champAt); if (next) await say(`${next.left} more alpha win${next.left === 1 ? '' : 's'} to reach ${next.name}.`); }
+      else { const next = CM.nextRank(S.alphaWins, S.f.champion); if (next) await say(`${next.left} more alpha win${next.left === 1 ? '' : 's'} to reach ${next.name}.`); }
     });
   }
   // An alpha out in the world: its own portrait, larger than a person, in a pulsing red glow.
@@ -275,7 +275,7 @@ import { GL3D } from './gl.js';
       badge('Shadow', ['holler', 'nettie2']), badge('Mind'), badge('Robot'), badge('Light'), badge('Toxic'), [!b.Normal, () => { S.quiz = 5; badge('Normal')[1](); }],
       [!f.semis, () => { flag('semi1'); flag('semis'); }], [!f.opaline, () => flag('opaline')], [!f.night, () => { f.finals = 4; flag('night'); }],
       [!f.blade, () => { flag('blade'); flag('shortcut'); }], [!f.dawn, () => { flag('sterling'); flag('dawn'); }],
-      [CM.alphaRank(S.alphaWins) < CM.CUP_RANK, () => { S.alphaWins = CM.ALPHA_NEED[CM.CUP_RANK - 1]; }], [!f.champion, () => { flag('champion'); S.champAt = S.alphaWins || 0; }],
+      [CM.alphaRank(S.alphaWins) < CM.CUP_RANK, () => { S.alphaWins = CM.ALPHA_NEED[CM.CUP_RANK - 1]; }], [!f.champion, () => flag('champion')],
     ];
     const next = steps.find((st) => st[0]);
     if (next) next[1]();
@@ -290,7 +290,7 @@ import { GL3D } from './gl.js';
     else if (act === 'coins') S.money += 5000;
     else if (act === 'balls') addItem('creataball', 10);
     else if (act === 'potions') ['potion', 'super_potion', 'max_potion', 'revive'].forEach((id) => addItem(id, 10));
-    else if (act === 'cards') Object.keys(CARDS).filter((id) => CARDS[id].tier < 4).forEach((id) => addCard(id));
+    else if (act === 'cards') Object.keys(CARDS).filter((id) => CARDS[id].tier < CM.SECRET).forEach((id) => addCard(id));
     else if (act === 'health') addCard('hp250', 10);
     else if (act === 'clothes') Object.keys(CLOTHES).forEach((id) => { S.wardrobe[id] = true; });
     else if (act === 'level' && S.party[0]) { CM.gainXp(S.party[0], 1e7, CM.levelCap(badgeCount())); S.party[0].hp = CM.maxHp(S.party[0]); }
@@ -1066,10 +1066,13 @@ import { GL3D } from './gl.js';
         'Champion Vex: You saved Galdra. But that is not why they are here. They came to see whether anyone can beat me. Let us give them a Champion-time match!']);
       if (!await duel('Champion Vex', TEAMS.vex, CUP)) return;
       flag('champion');
-      S.champAt = S.alphaWins || 0;
       await sayAll(['Champion Vex: ...My unbeaten run ends here. I could not be prouder to lose.', `${you()} is the new Champion of Galdra!`,
-        'Your title is now Champion I! Every five alphas you beat from here adds a numeral: Champion II, III, IV and on, for as long as you keep winning.']);
+        `You can now earn the Champion title, the highest rank of all, above Legend and Mythic. Champion I takes ${CM.CHAMPION_AT} alpha wins (you have ${S.alphaWins || 0}), and every five after that adds a numeral: Champion II, III, IV and on, without end.`]);
+      if (myTitle().startsWith('Champion')) await say(`You already have the wins for it. Your title is now ${myTitle()}!`);
       await giveCards(['inferno_crash', 'hyper_burst', 'hp250']);
+      // And a Mythic move in the element of the Creatamon that led the team.
+      await say('Champion Vex: And this. A card so rare that most trainers never even see one.');
+      await giveCards([Object.keys(CARDS).find((id) => CARDS[id].tier === 5 && CARDS[id].element === S.party[0].element)]);
       await giveClothes(['crown', 'champion_cape']);
       await say('Thank you for playing Creatamon! The world stays open: keep forging, collecting and exploring.');
     },
@@ -1132,13 +1135,15 @@ import { GL3D } from './gl.js';
     ['Inventory', 'Press E to see your items and unused Power Cards at any time.'],
     ['Menu', 'Press M or Esc. Your next goal is at the top; your party, Forge, Bag, Wardrobe and sprays are below it.'],
     ['Forge', 'Creatamon are built, not caught. Each holds up to six move cards and as many health cards as you like. Forging a new Creatamon costs a Creataball, and so does rebuilding one.'],
+    ['Power Cards', 'Five rarities: ★ Common, ★★ Rare, ★★★ Epic, ★★★★ Legendary and ★★★★★ Mythic. Legendary cards drop from alphas and the last routes, and late Creatastops sell them; Mythic ones come only from alphas once you are Champion.'],
+    ['Move effects', 'Some moves strike first, hit several times, drain health, cost recoil, or land critical hits often. Others raise or lower ATK, DEF or SPD (up to three steps), or burn or poison the foe so it loses a tenth of its HP every turn. All of these wear off when a Creatamon leaves the battle.'],
     ['Battle', 'Pick a move. Matching a move to your Creatamon\'s element hits harder, and so does hitting a weakness. Bag uses a potion; Switch swaps Creatamon.'],
     ['Grow', 'Every Creatamon of yours that attacked a foe earns XP when it faints (and any party member under level 10 earns it too, without fighting), up to a level limit that rises with each badge. At levels 16 and 36 a Creatamon can Evolve from the menu for free health and stronger attacks. Give each one an item to hold.'],
     ['Pick-ups', 'Sparkles on the ground are cards, items, clothes and spray designs. Walk over them.'],
     ['Heal', 'Step on a pink heal pad to restore your whole party. If everyone faints you return to the last pad you used.'],
     ['Gyms', 'Each town\'s gym has a puzzle before its Leader. Press R to start a puzzle over. In gyms you can use Max Mode once per battle.'],
     ['Bike', 'Once the Champion gives you a bike, press Q outdoors to hop on or off. It is twice as fast as walking. Later it gets floats: then just ride onto water to cross it.'],
-    ['Alphas', 'Huge red-glowing alpha Creatamon prowl near long grass. If one spots you it charges; if it touches you, you battle. They are tough, but beating them raises your Champion rank (Alpha I up through King, Emperor, Conqueror, Warlord, Legend and Mythic), which the Champion demands. Champions keep climbing: Champion II, III, IV... Stand still to show your title.'],
+    ['Alphas', 'Huge red-glowing alpha Creatamon prowl near long grass. If one spots you it charges; if it touches you, you battle. They are tough, but beating them raises your Champion rank (Alpha I up through King, Emperor, Conqueror, Warlord, Legend and Mythic), which the Champion demands. Above Mythic III is the Champion title, for those who have beaten the Champion: Champion I, II, III... Stand still to show your title.'],
     ['Trainers', 'Trainers on the routes watch the road. Step right beside one, or up to three tiles in front of them, and they challenge you. Once beaten they leave you alone.'],
     ['Fast travel', 'Once you have stood on a town\'s heal pad, the Town Map in the menu can take you straight back there.'],
     ['Extras', 'Trophies pay coins for milestones. One wild Creatamon in forty is shiny and leaves a purse of coins. Come back each day for a small gift. Your Trainer Card keeps your records.'],
@@ -1171,13 +1176,16 @@ import { GL3D } from './gl.js';
   // In Max Mode the easter egg is someone else.
   const shownName = (c) => (c.max && CM.isEgg(c) ? CM.EGG.maxName : c.name);
   const hpClass = (f) => (f > 0.5 ? '' : f > 0.2 ? 'mid' : 'low');
+  // The line beside a name: level, element, Max Mode, then any stat stages and a burn or poison.
+  const STATUS_TAGS = { burn: 'BRN', poison: 'PSN' };
+  const lvLine = (c) => [`Lv ${c.level}`, c.element, c.max && 'MAX',
+    ...Object.keys(CM.STAT_TAGS).filter((k) => CM.stage(c, k)).map((k) => `${CM.STAT_TAGS[k]}${CM.stage(c, k) > 0 ? '+' : '−'}${Math.abs(CM.stage(c, k))}`),
+    STATUS_TAGS[c.status]].filter(Boolean).join(' · ');
   function renderBattle() {
     const { me, foe } = B;
     $('foeName').textContent = `${foe.shiny ? '✨ ' : foe.rare ? '✦ ' : ''}${shownName(foe)}`;
     $('foeSprite').classList.toggle('shiny', !!foe.shiny);
-    $('foeLv').textContent = `Lv ${foe.level} · ${foe.element}${foe.max ? ' · MAX' : ''}`;
     $('meName').textContent = shownName(me);
-    $('meLv').textContent = `Lv ${me.level} · ${me.element}${me.max ? ' · MAX' : ''}`;
     $('foeSprite').classList.toggle('max', !!foe.max);
     $('foeSprite').classList.toggle('alpha', !!foe.alpha && !foe.max);
     $('meSprite').classList.toggle('max', !!me.max);
@@ -1186,6 +1194,8 @@ import { GL3D } from './gl.js';
     updateBars();
   }
   function updateBars() {
+    $('foeLv').textContent = lvLine(B.foe);
+    $('meLv').textContent = lvLine(B.me);
     for (const [c, bar] of [[B.foe, $('foeBar')], [B.me, $('meBar')]]) {
       const f = c.hp / CM.maxHp(c);
       bar.style.width = `${f * 100}%`;
@@ -1224,7 +1234,10 @@ import { GL3D } from './gl.js';
       await animate(who, 'Cursed');
       return sayAll(['The world goes dark. A shrine of bone and teeth rises out of nothing.', 'Domain Expansion: Malevolent Shrine!']);
     }
-    await animate(who, r.heal != null ? 'heal' : m.element);
+    if (r.failed) { SFX.play('miss'); return say('But nothing happened!'); }
+    // Status moves show arrows: rising over the user for a boost, sinking over the foe for a drop.
+    const statusFx = m.inflict ? m.element : m.down ? 'down' : 'up';
+    await animate(who, r.heal != null ? 'heal' : m.power ? m.element : statusFx);
     updateBars();
     if (r.heal != null) { SFX.play('heal'); return say(`${shownName(att)} recovered ${r.heal} HP!`); }
     if (r.blocked) return say(`${shownName(def)}'s ${ITEMS[def.item].name} nullified the hit!`);
@@ -1232,11 +1245,34 @@ import { GL3D } from './gl.js';
       flash($(`${who}Sprite`));
       return say(`The attack stops dead in the infinity around ${def.name}! ${shownName(att)} takes ${r.infinity} damage instead!`);
     }
+    if (!m.power) return aftermath(who, r);
     flash($(`${other}Sprite`));
     SFX.play(r.eff > 1 || r.crit ? 'strong' : r.eff < 1 ? 'weak' : 'hit');
     if (r.crit) await say('A critical hit!');
     if (r.eff > 1) await say("It's super effective!");
     else if (r.eff < 1) await say("It's not very effective...");
+    if (r.hits > 1) await say(`It hit ${r.hits} times!`);
+    await aftermath(who, r);
+  }
+  // What a move did besides its damage: drain, recoil, stat stages, burns and poison.
+  const STAT_NAMES = { atk: 'Attack', def: 'Defence', spd: 'Speed' };
+  const andList = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0]);
+  async function aftermath(who, r) {
+    const other = who === 'me' ? 'foe' : 'me', att = B[who], def = B[other];
+    if (r.drained) { SFX.play('heal'); await say(`${shownName(att)} drained ${r.drained} HP!`); }
+    if (r.recoil) { flash($(`${who}Sprite`)); SFX.play('hit'); await say(`${shownName(att)} is hurt by the recoil!`); }
+    for (const [c, moved, dir] of [[att, r.up, 1], [def, r.down, -1]]) {
+      if (!moved) continue;
+      // Stats that moved the same amount share one line.
+      const by = {};
+      Object.keys(moved).forEach((k) => { (by[moved[k]] = by[moved[k]] || []).push(STAT_NAMES[k]); });
+      for (const n of Object.keys(by).map(Number)) {
+        SFX.play(n > 0 ? 'up' : n < 0 ? 'down' : 'miss');
+        const how = n ? `${n > 0 ? 'rose' : 'fell'}${Math.abs(n) > 1 ? ' sharply' : ''}` : `won't go any ${dir > 0 ? 'higher' : 'lower'}`;
+        await say(`${shownName(c)}'s ${andList(by[n])} ${how}!`);
+      }
+    }
+    if (r.inflict) { SFX.play('weak'); await say(`${shownName(def)} was ${CM.STATUS_NAMES[r.inflict]}!`); }
   }
 
   async function goMax(who) {
@@ -1252,10 +1288,12 @@ import { GL3D } from './gl.js';
     B.domain = null;
     $battle.classList.remove('domain');
   }
-  // Max Mode ends when its Creatamon leaves the fight; a domain goes with its owner.
+  // Max Mode ends when its Creatamon leaves the fight; a domain goes with its owner, and stat stages, burns and
+  // poison wear off.
   function endMax(c) {
     if (B.domain && B.domain.owner === c) closeDomain();
     CM.setMax(c, false);
+    CM.calm(c);
   }
   async function domainTick() {
     const { owner } = B.domain;
@@ -1388,7 +1426,7 @@ import { GL3D } from './gl.js';
     } finally {
       $('foeSprite').classList.remove('shiny');
       SFX.music('world');
-      S.party.forEach((c) => CM.setMax(c, false));
+      S.party.forEach((c) => { CM.setMax(c, false); CM.calm(c); });
       closeDomain();
       $('meSprite').classList.remove('max');
       $('foeSprite').classList.remove('max');
@@ -1419,6 +1457,7 @@ import { GL3D } from './gl.js';
 
     // Deals with anyone who has fainted. Returns 'win' | 'lose', 'next' if someone new came out, or null.
     const settle = async () => {
+      let out = null;
       if (B.foe.hp <= 0) {
         SFX.play('faint');
         await say(`${foeTag}${shownName(B.foe)} fainted!`);
@@ -1435,8 +1474,9 @@ import { GL3D } from './gl.js';
         renderBattle();
         await say(`${opts.trainer} sent out ${next.name}!`);
         await lastStand();
-        return 'next';
+        out = 'next';
       }
+      // Recoil, burns and poison can knock out both sides at once, so yours is checked either way.
       if (B.me.hp <= 0) {
         SFX.play('faint');
         await say(`${shownName(B.me)} fainted!`);
@@ -1447,7 +1487,7 @@ import { GL3D } from './gl.js';
         await say(`Go, ${B.me.name}!`);
         return 'next';
       }
-      return null;
+      return out;
     };
 
     for (let turn = 1; ; turn++) {
@@ -1484,8 +1524,11 @@ import { GL3D } from './gl.js';
         continue;
       }
       const foeMove = CM.pickMove(B.foe, B.me, Math.random, opts.skill);
+      // A move that strikes first goes before one that does not; otherwise the faster Creatamon goes first.
       const mySpd = CM.stats(B.me).spd, foeSpd = CM.stats(B.foe).spd;
-      const meFirst = mySpd > foeSpd || (mySpd === foeSpd && Math.random() < 0.5);
+      const quick = (m) => !!(m && m.first);
+      const meFirst = quick(myMove) !== quick(foeMove) ? quick(myMove)
+        : mySpd > foeSpd || (mySpd === foeSpd && Math.random() < 0.5);
       const order = !myMove ? ['foe'] : meFirst ? ['me', 'foe'] : ['foe', 'me'];
 
       let result = null;
@@ -1504,6 +1547,19 @@ import { GL3D } from './gl.js';
       }
       if (!result && B.domain) {
         await domainTick();
+        result = await settle();
+      }
+      // Burns and poison wear their victim down at the end of every turn.
+      if (!result && (B.me.status || B.foe.status)) {
+        for (const who of ['me', 'foe']) {
+          const c = B[who];
+          if (!c.status || c.hp <= 0) continue;
+          CM.statusTick(c);
+          updateBars();
+          flash($(`${who}Sprite`));
+          SFX.play('weak');
+          await say(`${shownName(c)} is hurt by its ${c.status}!`);
+        }
         result = await settle();
       }
       // Held items that mend their holder a little every turn.
@@ -1525,7 +1581,7 @@ import { GL3D } from './gl.js';
     const c = CARDS[id];
     const stripe = c.kind === 'move' ? `style="border-top-color:${ELEMENTS[c.element].color}"` : '';
     return `<${tag} class="card t${c.tier}" ${stripe} ${attrs}>
-      <span class="tier">${'★'.repeat(c.tier)} ${CM.TIER_NAMES[c.tier]}</span>
+      <span class="tier">${CM.stars(c)} ${CM.TIER_NAMES[c.tier]}</span>
       <b>${c.name}</b><small>${CM.cardDesc(c)}</small>${n > 1 ? `<em>×${n}</em>` : ''}</${tag}>`;
   };
   const sortedCards = (counts) => Object.keys(CARDS).filter((id) => counts[id] > 0);
@@ -1648,7 +1704,7 @@ import { GL3D } from './gl.js';
   }
   // The player's record: who they are, how far they have come, and what they have done along the way.
   function renderCard() {
-    const mins = Math.floor(S.stats.time / 60000), next = CM.nextRank(S.alphaWins, S.f.champion, S.champAt);
+    const mins = Math.floor(S.stats.time / 60000), next = CM.nextRank(S.alphaWins, S.f.champion);
     const line = (k, v) => `<div class="ware"><div><b>${k}</b></div><span>${v}</span></div>`;
     $menu.className = '';
     $menu.innerHTML = `${head('Trainer Card')}
@@ -1694,7 +1750,7 @@ import { GL3D } from './gl.js';
   function renderShop() {
     const n = badgeCount(), can = (price) => (S.money >= price ? '' : 'disabled');
     const goods = Object.keys(ITEMS).filter((id) => ITEMS[id].price && (ITEMS[id].need || 0) <= n);
-    const cards = Object.keys(CARDS).filter((id) => { const c = CARDS[id]; return c.tier < 4 && !c.key && CM.cardNeed(id) <= n && (c.kind === 'hp' || c.element === shop.el); });
+    const cards = Object.keys(CARDS).filter((id) => { const c = CARDS[id]; return c.tier < CM.SECRET && !c.key && CM.cardNeed(id) <= n && (c.kind === 'hp' || c.element === shop.el); });
     const rack = shop.clothes.filter((id) => !S.wardrobe[id]);
     const row = (kind, id, name, desc, price, have) => `<div class="ware"><div><b>${name}</b> <small>${desc}${have ? ` · you have ${have}` : ''}</small></div>
       <button class="plain" data-buy="${kind}:${id}" ${can(price)}>${COIN}${price}</button></div>`;
@@ -1739,7 +1795,7 @@ import { GL3D } from './gl.js';
   const isEgg = CM.isEgg;
   // Secret cards come and go with the name; they never touch the card collection.
   function syncEgg(draft) {
-    draft.moves = draft.moves.filter((id) => CARDS[id].tier !== 4);
+    draft.moves = draft.moves.filter((id) => CARDS[id].tier !== CM.SECRET);
     if (isEgg(draft)) draft.moves.push(...CM.EGG.moves);
   }
 
@@ -1767,7 +1823,7 @@ import { GL3D } from './gl.js';
   }
 
   // Free card slots on a draft. Secret cards are bound to their owner and take no slot.
-  const moveRoom = (draft) => CM.MOVE_SLOTS - draft.moves.filter((id) => CARDS[id].tier !== 4).length;
+  const moveRoom = (draft) => CM.MOVE_SLOTS - draft.moves.filter((id) => CARDS[id].tier !== CM.SECRET).length;
   const forgeLevel = () => (forge.idx == null ? 1 : S.party[forge.idx].level);
   const drawingNow = () => forge.look === 'draw' && !isEgg(forge.draft);
   function paintPreview() {
@@ -1870,7 +1926,7 @@ import { GL3D } from './gl.js';
     const preview = { ...draft, level: forgeLevel() };
     const st = CM.stats(preview);
     const left = (kind) => (kind === 'moves' ? moveRoom(draft) : Infinity);
-    const slots = (list, kind) => list.map((id, i) => (CARDS[id].tier === 4
+    const slots = (list, kind) => list.map((id, i) => (CARDS[id].tier === CM.SECRET
       ? cardHTML(id, 1, 'title="Bound to this Creatamon"', 'div')
       : cardHTML(id, 1, `data-un="${kind}" data-i="${i}" title="Click to remove"`))).join('')
       + (kind !== 'moves' ? '<div class="slot">no limit,<br>add more below</div>' : left(kind) > 0 ? `<div class="slot">${left(kind)} free slot${left(kind) === 1 ? '' : 's'},<br>add below</div>` : '<div class="slot">full</div>');
@@ -1913,7 +1969,7 @@ import { GL3D } from './gl.js';
           ${!S.items.creataball ? '<small class="empty">You have no Creataballs. Look for sparkles, win badges, or battle wild Creatamon.</small>' : ''}
         </div>
         <div class="right">
-          <h3>Moves (${draft.moves.filter((id) => CARDS[id].tier !== 4).length}/${CM.MOVE_SLOTS})</h3>
+          <h3>Moves (${draft.moves.filter((id) => CARDS[id].tier !== CM.SECRET).length}/${CM.MOVE_SLOTS})</h3>
           <div class="cards">${slots(draft.moves, 'moves')}</div>
           <h3>Health (${draft.hpCards.length})</h3>
           <div class="cards">${slots(draft.hpCards, 'hpCards')}</div>
@@ -2064,7 +2120,7 @@ import { GL3D } from './gl.js';
     if (d.a === 'dismantle') {
       const c = S.party[+d.i];
       if (!confirm(`Dismantle ${c.name}? Its Power Cards return to you, but its levels are lost.`)) return;
-      [...c.moves, ...c.hpCards].filter((id) => CARDS[id].tier !== 4).forEach((id) => addCard(id));
+      [...c.moves, ...c.hpCards].filter((id) => CARDS[id].tier !== CM.SECRET).forEach((id) => addCard(id));
       S.party.splice(+d.i, 1);
     }
     save();

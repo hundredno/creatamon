@@ -367,6 +367,7 @@ import { CM } from './core.js';
   const g = Array.from({ length: H }, () => Array(W).fill('#'));
   const rect = (x0, y0, x1, y1, ch) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) g[y][x] = ch; };
   const set = (x, y, ch) => { g[y][x] = ch; };
+  // drops: percent chance of each card tier from Common up (see CM.rollDrop); the last routes add a sliver of Legendary.
   // wild: a named list of wild Creatamon that replaces the usual ones for the ground underfoot.
   const area = (name, x0, y0, x1, y1, lv, drops, wild) => AREAS.push({ name, x0, y0, x1, y1, lv, drops, wild });
   const house = (x, y, w = 4) => { rect(x, y, x + w - 1, y + 1, 'R'); rect(x, y + 2, x + w - 1, y + 2, 'W'); };
@@ -484,19 +485,19 @@ import { CM } from './core.js';
   // Route 9: a wide river, and Thornmuth beyond it
   rect(78, 10, 83, 18, 's'); rect(80, 11, 82, 13, '"'); rect(79, 15, 82, 17, '"');
   rect(84, 3, 88, 23, '~'); rect(89, 10, 91, 18, 's'); set(92, 14, 'c');
-  area('Route 9', 78, 3, 92, 23, [39, 42], [15, 55, 30]);
+  area('Route 9', 78, 3, 92, 23, [39, 42], [15, 55, 29, 1]);
   rect(93, 6, 98, 21, 'c'); gymHall(93, 6, 'Shadow'); set(97, 16, 'H');
   area('Thornmuth', 93, 6, 98, 21);
   // Route 14 and Reverie
   set(99, 18, 'c'); set(100, 18, 's'); rect(101, 8, 110, 22, 's'); rect(101, 12, 107, 12, 'T'); rect(104, 17, 110, 17, 'T');
   rect(102, 9, 106, 11, '"'); rect(103, 13, 109, 16, '"'); rect(101, 19, 105, 21, '"'); set(111, 10, 's');
-  area('Route 14', 99, 8, 111, 22, [43, 46], [12, 53, 35]);
+  area('Route 14', 99, 8, 111, 22, [43, 46], [12, 53, 34, 1]);
   rect(112, 4, 122, 20, 'c'); gymHall(114, 5, 'Mind'); house(113, 13); set(120, 16, 'H');
   area('Reverie', 112, 4, 122, 20);
   // Route 10 and Summit City
   rect(70, 52, 74, 78, '.'); rect(70, 58, 74, 74, 's'); rect(70, 53, 71, 56, ','); rect(73, 60, 74, 66, '"'); rect(70, 68, 71, 72, '"');
   set(72, 79, 'c');
-  area('Route 10', 70, 52, 74, 79, [58, 62], [10, 50, 40]);
+  area('Route 10', 70, 52, 74, 79, [58, 62], [10, 50, 38, 2]);
   rect(64, 80, 97, 94, 'c'); hall(77, 81, 'League', null, null, 7); hall(90, 81, 'Plant'); house(65, 82); house(86, 89); set(70, 88, 'H');
   area('Summit City', 64, 80, 97, 94);
 
@@ -505,22 +506,22 @@ import { CM } from './core.js';
   set(117, 21, 'c'); rect(113, 22, 121, 24, 's'); rect(113, 25, 121, 33, '.');
   rect(115, 24, 121, 24, 'T'); rect(113, 28, 119, 28, '#'); rect(115, 31, 121, 31, '#');
   rect(114, 26, 119, 27, ','); rect(115, 29, 120, 30, ':'); rect(114, 32, 119, 33, ','); set(117, 34, '.');
-  area('Route 15', 113, 21, 121, 34, [47, 50], [12, 53, 35], 'east1');
+  area('Route 15', 113, 21, 121, 34, [47, 50], [12, 53, 34, 1], 'east1');
   rect(106, 35, 122, 47, 'c'); gymHall(108, 36, 'Robot'); house(116, 36); house(107, 43); set(118, 42, 'H'); set(114, 48, 'c');
   area('Cogsworth', 106, 35, 122, 48);
   // Route 16
   rect(110, 49, 118, 57, '.'); rect(110, 51, 116, 51, '#'); rect(112, 54, 118, 54, '#');
   rect(111, 49, 113, 50, '*'); rect(111, 52, 117, 53, ','); rect(113, 55, 117, 56, '*'); set(114, 58, 'S');
-  area('Route 16', 110, 49, 118, 58, [49, 52], [12, 50, 38], 'east2');
+  area('Route 16', 110, 49, 118, 58, [49, 52], [12, 50, 37, 1], 'east2');
   rect(104, 59, 122, 70, 'S'); gymHall(109, 60, 'Light'); house(117, 60); house(105, 65); set(118, 66, 'H'); rect(98, 68, 103, 68, 'S'); set(113, 71, '.');
   area('Solhaven', 98, 59, 122, 70);
   // Route 17, down into the fen
   rect(109, 72, 117, 78, '.'); rect(109, 74, 115, 74, '#'); rect(111, 76, 117, 76, '#');
   rect(110, 72, 112, 73, ';'); rect(110, 75, 116, 75, ';'); rect(112, 77, 116, 78, ';');
-  area('Route 17', 109, 71, 117, 78, [51, 54], [10, 50, 40], 'east3');
+  area('Route 17', 109, 71, 117, 78, [51, 54], [10, 50, 38, 2], 'east3');
   rect(100, 79, 122, 91, '.'); rect(101, 88, 105, 90, '~'); rect(116, 80, 120, 82, '~'); rect(112, 86, 121, 90, ';');
   gymHall(105, 80, 'Toxic'); house(110, 84); set(108, 87, 'H'); rect(98, 86, 99, 86, 'c');
-  area('Mirefen', 98, 79, 122, 91, [52, 55], [10, 50, 40], 'east3');
+  area('Mirefen', 98, 79, 122, 91, [52, 55], [10, 50, 38, 2], 'east3');
 
   // ---------- Winding roads ----------
   // Hedges, ridges and thickets laid across the routes so that each one doubles back on itself.

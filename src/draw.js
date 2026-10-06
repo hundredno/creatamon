@@ -879,6 +879,17 @@ const GFX = (() => {
           g.fillStyle = i % 2 ? '#8dff9a' : '#fff9a8'; g.fillRect(x - 3, y - 10, 6, 20); g.fillRect(x - 10, y - 3, 20, 6);
         }
         circle(from.x, from.y, 60 + t * 50, `rgba(140,255,160,${0.25 * Math.sin(t * Math.PI)})`);
+      } else if (kind === 'up' || kind === 'down') {
+        // A stat change: warm arrows rise over the user, or cool ones sink over the foe.
+        const at = kind === 'up' ? from : to, dir = kind === 'up' ? -1 : 1, rgb = kind === 'up' ? '255,138,61' : '79,141,255';
+        g.globalAlpha = Math.sin(t * Math.PI);
+        g.fillStyle = `rgb(${rgb})`;
+        for (let i = 0; i < 9; i++) {
+          const x = at.x + (seed[i] - 0.5) * 150, y = at.y - dir * 70 + dir * ((t * 1.2 + seed[i + 7]) % 1) * 140;
+          g.beginPath(); g.moveTo(x, y + dir * 14); g.lineTo(x - 11, y); g.lineTo(x - 4, y); g.lineTo(x - 4, y - dir * 14);
+          g.lineTo(x + 4, y - dir * 14); g.lineTo(x + 4, y); g.lineTo(x + 11, y); g.closePath(); g.fill();
+        }
+        circle(at.x, at.y, 60 + t * 40, `rgba(${rgb},0.2)`);
       } else if (kind === 'Electric') {
         if (t < 0.75) for (let b = 0; b < 3; b++) {
           let x = to.x + (seed[b] - 0.5) * 120, y = 0;

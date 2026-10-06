@@ -42,8 +42,16 @@ const CM = (() => {
     Bug: { atk: 9, def: 11, spd: 10, hint: 'Sturdy and steady' },
   };
 
-  const TIER_NAMES = { 1: 'Common', 2: 'Rare', 3: 'Epic', 4: 'Secret' };
+  // Secret cards sit apart from the five rarities: they are never found, only bound to the easter egg.
+  const TIER_NAMES = { 1: 'Common', 2: 'Rare', 3: 'Epic', 4: 'Legendary', 5: 'Mythic', 6: 'Secret' };
+  const SECRET = 6;
+  const stars = (c) => (c.tier === SECRET ? '✦' : '★'.repeat(c.tier));
   const mv = (name, tier, element, power, acc = 100) => ({ kind: 'move', name, tier, element, power, acc });
+  // A move that does more than hit. fx: first (strikes first), hits (strikes that many times; power is per hit),
+  // drain / recoil (share of the damage dealt that the user regains / takes), crit (critical-hit chance),
+  // up / down (stat stages raised on the user / lowered on the foe, e.g. {atk: 1}), inflict ('burn' | 'poison'),
+  // chance (percent chance of up, down and inflict on a move that deals damage). Power 0 makes it a status move.
+  const fx = (name, tier, element, power, acc, effects) => ({ ...mv(name, tier, element, power, acc), ...effects });
   const hp = (name, tier, amount) => ({ kind: 'hp', name, tier, amount });
   const CARDS = {
     // Low end
@@ -62,6 +70,20 @@ const CM = (() => {
     gear_toss: mv('Gear Toss', 1, 'Robot', 40),
     glint: mv('Glint', 1, 'Light', 40),
     sludge_flick: mv('Sludge Flick', 1, 'Toxic', 40),
+    quick_jab: fx('Quick Jab', 1, 'Normal', 30, 100, { first: true }),
+    singe: fx('Singe', 1, 'Fire', 35, 100, { inflict: 'burn', chance: 30 }),
+    bubble_volley: fx('Bubble Volley', 1, 'Water', 15, 100, { hits: 3 }),
+    leech_sprout: fx('Leech Sprout', 1, 'Grass', 35, 100, { drain: 0.5 }),
+    static_jolt: fx('Static Jolt', 1, 'Electric', 35, 100, { down: { spd: 1 }, chance: 30 }),
+    stone_skin: fx('Stone Skin', 1, 'Rock', 0, 100, { up: { def: 1 } }),
+    rime_needle: fx('Rime Needle', 1, 'Ice', 35, 100, { crit: 0.3 }),
+    snarl: fx('Snarl', 1, 'Shadow', 0, 100, { down: { atk: 1 } }),
+    updraft: fx('Updraft', 1, 'Wind', 0, 100, { up: { spd: 2 } }),
+    twin_rivets: fx('Twin Rivets', 1, 'Metal', 22, 100, { hits: 2 }),
+    unsettle: fx('Unsettle', 1, 'Mind', 0, 100, { down: { def: 1 } }),
+    calibrate: fx('Calibrate', 1, 'Robot', 0, 100, { up: { atk: 1 } }),
+    dazzle: fx('Dazzle', 1, 'Light', 35, 100, { down: { atk: 1 }, chance: 30 }),
+    toxic_prick: fx('Toxic Prick', 1, 'Toxic', 30, 100, { inflict: 'poison', chance: 40 }),
     hp30: hp('Vitality Shard', 1, 30),
     // Mid range
     flame_wheel: mv('Flame Wheel', 2, 'Fire', 65),
@@ -79,6 +101,20 @@ const CM = (() => {
     venom_fang: mv('Venom Fang', 2, 'Toxic', 65),
     body_slam: mv('Body Slam', 2, 'Normal', 70),
     mend: { kind: 'move', name: 'Mend', tier: 2, element: 'Normal', power: 0, acc: 100, heal: 0.5 },
+    fury_flurry: fx('Fury Flurry', 2, 'Normal', 25, 90, { hits: 3 }),
+    kindle: fx('Kindle', 2, 'Fire', 0, 100, { up: { atk: 2 } }),
+    undertow: fx('Undertow', 2, 'Water', 60, 100, { drain: 0.5 }),
+    spore_cloud: fx('Spore Cloud', 2, 'Grass', 0, 100, { down: { atk: 1, spd: 1 } }),
+    volt_dash: fx('Volt Dash', 2, 'Electric', 50, 100, { first: true }),
+    pebble_storm: fx('Pebble Storm', 2, 'Rock', 20, 90, { hits: 4 }),
+    frostbite: fx('Frostbite', 2, 'Ice', 55, 100, { down: { spd: 1 }, chance: 50 }),
+    ambush: fx('Ambush', 2, 'Shadow', 55, 100, { crit: 0.5 }),
+    slipstream: fx('Slipstream', 2, 'Wind', 55, 100, { up: { spd: 1 } }),
+    iron_wall: fx('Iron Wall', 2, 'Metal', 0, 100, { up: { def: 2 } }),
+    meditate: fx('Meditate', 2, 'Mind', 0, 100, { up: { atk: 1, def: 1 } }),
+    piston_punch: fx('Piston Punch', 2, 'Robot', 80, 95, { recoil: 0.25 }),
+    halo_strike: fx('Halo Strike', 2, 'Light', 55, 100, { drain: 0.5 }),
+    noxious_fumes: fx('Noxious Fumes', 2, 'Toxic', 0, 90, { inflict: 'poison' }),
     hp100: hp('Vitality Core', 2, 100),
     // Field moves: also usable in the overworld. Key cards are never dropped by wild Creatamon.
     rock_smash: { ...mv('Rock Smash', 2, 'Rock', 55), key: true, field: 'Breaks cracked rocks' },
@@ -98,16 +134,62 @@ const CM = (() => {
     supernova: mv('Supernova', 3, 'Light', 110, 85),
     toxic_tide: mv('Toxic Tide', 3, 'Toxic', 110, 85),
     hyper_burst: mv('Hyper Burst', 3, 'Normal', 120, 80),
+    rally_cry: fx('Rally Cry', 3, 'Normal', 0, 100, { up: { atk: 1, def: 1, spd: 1 } }),
+    wildfire: fx('Wildfire', 3, 'Fire', 95, 90, { inflict: 'burn', chance: 50 }),
+    riptide_barrage: fx('Riptide Barrage', 3, 'Water', 40, 90, { hits: 3 }),
+    lifebloom: fx('Lifebloom', 3, 'Grass', 80, 100, { drain: 0.75 }),
+    chain_lightning: fx('Chain Lightning', 3, 'Electric', 35, 95, { hits: 3 }),
+    boulder_crash: fx('Boulder Crash', 3, 'Rock', 140, 85, { recoil: 0.33 }),
+    glacial_lance: fx('Glacial Lance', 3, 'Ice', 95, 95, { crit: 0.5 }),
+    soul_siphon: fx('Soul Siphon', 3, 'Shadow', 85, 100, { drain: 0.5 }),
+    gale_flurry: fx('Gale Flurry', 3, 'Wind', 30, 90, { hits: 4 }),
+    bulwark_bash: fx('Bulwark Bash', 3, 'Metal', 95, 95, { up: { def: 1 } }),
+    psy_lance: fx('Psy Lance', 3, 'Mind', 95, 95, { down: { def: 1 }, chance: 50 }),
+    missile_swarm: fx('Missile Swarm', 3, 'Robot', 25, 90, { hits: 5 }),
+    searing_halo: fx('Searing Halo', 3, 'Light', 90, 95, { down: { atk: 1 }, chance: 50 }),
+    acid_deluge: fx('Acid Deluge', 3, 'Toxic', 95, 90, { inflict: 'poison', chance: 50 }),
     hp250: hp('Titan Heart', 3, 250),
     dawnblade: { ...mv('Dawnblade', 3, 'Normal', 130, 90), key: true },
     endless_ray: { ...mv('Endless Ray', 3, 'Shadow', 125, 90), key: true },
-    // Secret (tier 4): never dropped, bound to the easter-egg Creatamon
-    divergent_fist: mv('Divergent Fist', 4, 'Cursed', 70),
-    dismantle: mv('Dismantle', 4, 'Cursed', 90),
-    piercing_blood: mv('Piercing Blood', 4, 'Cursed', 105, 95),
-    cleave: mv('Cleave', 4, 'Cursed', 130, 85),
-    black_flash: mv('Black Flash', 4, 'Cursed', 160, 70),
-    reverse_cursed: { kind: 'move', name: 'Reverse Cursed Technique', tier: 4, element: 'Cursed', power: 0, acc: 100, heal: 0.6 },
+    // Legendary: dropped by alphas and the last routes, and sold late in the game
+    stampede: fx('Stampede', 4, 'Normal', 40, 90, { hits: 4 }),
+    phoenix_dive: fx('Phoenix Dive', 4, 'Fire', 140, 95, { recoil: 0.25, inflict: 'burn', chance: 30 }),
+    maelstrom: fx('Maelstrom', 4, 'Water', 130, 95, { up: { spd: 1 } }),
+    verdant_wrath: fx('Verdant Wrath', 4, 'Grass', 130, 95, { drain: 0.5 }),
+    railgun: fx('Railgun', 4, 'Electric', 140, 90, { crit: 0.3 }),
+    mountain_breaker: fx('Mountain Breaker', 4, 'Rock', 135, 90, { up: { def: 1 } }),
+    absolute_zero: fx('Absolute Zero', 4, 'Ice', 130, 90, { down: { spd: 1 } }),
+    nightfall: fx('Nightfall', 4, 'Shadow', 130, 90, { down: { atk: 1 } }),
+    jetstream_lance: fx('Jetstream Lance', 4, 'Wind', 110, 100, { first: true }),
+    meteor_hammer: fx('Meteor Hammer', 4, 'Metal', 165, 85, { recoil: 0.33 }),
+    thought_shatter: fx('Thought Shatter', 4, 'Mind', 130, 95, { down: { def: 1 } }),
+    omega_cannon: fx('Omega Cannon', 4, 'Robot', 135, 90, { up: { atk: 1 } }),
+    judgement_ray: fx('Judgement Ray', 4, 'Light', 130, 95, { drain: 0.33 }),
+    caustic_ruin: fx('Caustic Ruin', 4, 'Toxic', 130, 90, { inflict: 'poison', down: { def: 1 }, chance: 40 }),
+    hp400: hp('Colossus Heart', 4, 400),
+    // Mythic: only alphas (once you are Champion) and the Champion himself give these
+    genesis_strike: fx('Genesis Strike', 5, 'Normal', 150, 100, { first: true }),
+    worldfire: fx('Worldfire', 5, 'Fire', 160, 95, { inflict: 'burn', chance: 50 }),
+    abyssal_deluge: fx('Abyssal Deluge', 5, 'Water', 45, 100, { hits: 4 }),
+    worldroot_surge: fx('Worldroot Surge', 5, 'Grass', 140, 100, { drain: 0.5, up: { def: 1 } }),
+    storm_sovereign: fx('Storm Sovereign', 5, 'Electric', 160, 95, { crit: 0.3, down: { spd: 1 } }),
+    primeval_quake: fx('Primeval Quake', 5, 'Rock', 160, 95, { down: { def: 1 } }),
+    eternal_winter: fx('Eternal Winter', 5, 'Ice', 150, 100, { crit: 0.5, down: { spd: 1 } }),
+    void_requiem: fx('Void Requiem', 5, 'Shadow', 150, 100, { drain: 0.5, crit: 0.3 }),
+    skyrend_tempest: fx('Skyrend Tempest', 5, 'Wind', 150, 100, { crit: 0.3, up: { spd: 1 } }),
+    starforged_blade: fx('Starforged Blade', 5, 'Metal', 160, 95, { up: { atk: 1, def: 1 } }),
+    astral_dominion: fx('Astral Dominion', 5, 'Mind', 150, 100, { down: { atk: 1, def: 1 } }),
+    singularity_engine: fx('Singularity Engine', 5, 'Robot', 160, 95, { up: { atk: 1, spd: 1 } }),
+    celestial_dawn: fx('Celestial Dawn', 5, 'Light', 140, 100, { drain: 0.5, down: { atk: 1 } }),
+    miasmic_doom: fx('Miasmic Doom', 5, 'Toxic', 150, 100, { inflict: 'poison', down: { def: 1 } }),
+    hp600: hp('Eternal Heart', 5, 600),
+    // Secret: never dropped, bound to the easter-egg Creatamon
+    divergent_fist: mv('Divergent Fist', SECRET, 'Cursed', 70),
+    dismantle: mv('Dismantle', SECRET, 'Cursed', 90),
+    piercing_blood: mv('Piercing Blood', SECRET, 'Cursed', 105, 95),
+    cleave: mv('Cleave', SECRET, 'Cursed', 130, 85),
+    black_flash: mv('Black Flash', SECRET, 'Cursed', 160, 70),
+    reverse_cursed: { kind: 'move', name: 'Reverse Cursed Technique', tier: SECRET, element: 'Cursed', power: 0, acc: 100, heal: 0.6 },
   };
   // A Shadow Beast named exactly this unlocks a special look and the secret cards.
   const EGG = {
@@ -128,11 +210,26 @@ const CM = (() => {
   const INFINITY_RATE = 0.9, INFINITY_DAMAGE = 100;
   // While a domain is open, its owner lands this on the foe every turn. It cannot miss.
   const DOMAIN_STRIKE = { kind: 'move', name: 'Malevolent Shrine', element: 'Cursed', power: 90, acc: 1000 };
+  const STAT_TAGS = { atk: 'ATK', def: 'DEF', spd: 'SPD' };
+  // {atk: 1, def: 1} -> "ATK/DEF+1"
+  const stagesText = (by, sign) => {
+    const ks = Object.keys(by);
+    return ks.every((k) => by[k] === by[ks[0]]) ? `${ks.map((k) => STAT_TAGS[k]).join('/')}${sign}${by[ks[0]]}`
+      : ks.map((k) => `${STAT_TAGS[k]}${sign}${by[k]}`).join(' ');
+  };
+  const effectText = (c) => {
+    const pct = (f) => `${Math.round(f * 100)}%`;
+    const extra = [c.inflict && (c.inflict === 'burn' ? 'Burns' : 'Poisons'), c.up && `Self ${stagesText(c.up, '+')}`,
+      c.down && `Foe ${stagesText(c.down, '−')}`].filter(Boolean).join(', ');
+    return [c.first && 'Strikes first', c.drain && `Drains ${pct(c.drain)}`, c.recoil && `Recoil ${pct(c.recoil)}`,
+      c.crit && `Crit ${pct(c.crit)}`, extra && (c.chance ? `${extra} (${c.chance}%)` : extra)].filter(Boolean).join(' · ');
+  };
   const cardDesc = (c) =>
     c.kind === 'hp' ? `+${c.amount} max HP`
       : c.domain ? `Sure-hit slashes for ${c.domain} turns`
       : c.heal ? `Restores ${c.heal * 100}% HP`
-        : `${c.element} · Pow ${c.power} · Acc ${c.acc}%${c.field ? ` · ${c.field}` : ''}`;
+      : !c.power ? `${c.element}${c.acc < 100 ? ` · Acc ${c.acc}%` : ''} · ${effectText(c)}`
+        : `${c.element} · Pow ${c.power}${c.hits ? `×${c.hits}` : ''} · Acc ${c.acc}%${c.field ? ` · ${c.field}` : ''}${effectText(c) ? ` · ${effectText(c)}` : ''}`;
 
   const MAX_PARTY = 6, BASE_HP = 50, CRIT_RATE = 1 / 16;
 
@@ -187,16 +284,44 @@ const CM = (() => {
     const moves = c.moves.map((id) => CARDS[id]);
     if (!c.max) return moves;
     if (isEgg(c)) return EGG.maxMoves;
-    const best = {};
-    moves.filter((m) => !m.heal).forEach((m) => { if (!best[m.element] || m.power > best[m.element].power) best[m.element] = m; });
+    // Each element's strongest attack, by its total over all hits, becomes a Max move. Heals and status moves stay as they are.
+    const best = {}, total = (m) => m.power * (m.hits || 1);
+    moves.filter((m) => m.power).forEach((m) => { if (!best[m.element] || total(m) > total(best[m.element])) best[m.element] = m; });
     return [
-      ...Object.values(best).map((m) => ({ kind: 'move', name: MAX_NAMES[m.element], element: m.element, power: Math.round(m.power * 1.5) + 20, acc: 100 })),
-      ...moves.filter((m) => m.heal),
+      ...Object.values(best).map((m) => ({ kind: 'move', name: MAX_NAMES[m.element], element: m.element, power: Math.round(total(m) * 1.5) + 20, acc: 100 })),
+      ...moves.filter((m) => !m.power),
     ];
+  };
+  // ---- Stat stages, burns and poison ----
+  // Moves can raise or lower a stat by stages, up to three either way: each stage up is +25%, each one down the
+  // reverse. Stages, burns and poison all last only while the Creatamon stays in the battle.
+  const STAGE_STEP = 0.25, STAGE_CAP = 3, STATUS_DAMAGE = 1 / 10;
+  const STATUS_NAMES = { burn: 'burned', poison: 'poisoned' };
+  const stage = (c, k) => (c.boost && c.boost[k]) || 0;
+  const stageMul = (n) => (n >= 0 ? 1 + STAGE_STEP * n : 1 / (1 - STAGE_STEP * n));
+  // Moves c's stages by `by` ({atk: 1, ...}) times sign. Returns how far each one really moved (0 at the cap).
+  const shift = (c, by, sign) => {
+    const moved = {};
+    for (const k of Object.keys(by)) {
+      const was = stage(c, k), now = Math.max(-STAGE_CAP, Math.min(STAGE_CAP, was + sign * by[k]));
+      moved[k] = now - was;
+      if (now !== was) c.boost = { ...c.boost, [k]: now };
+    }
+    return moved;
+  };
+  // Leaving the battle (switched out, fainted, or the battle is over) clears stages and status.
+  const calm = (c) => { delete c.boost; delete c.status; };
+  // Burn and poison: the end-of-turn damage. Returns the HP lost.
+  const statusTick = (c) => {
+    const lost = Math.min(c.hp, Math.max(1, Math.round(maxHp(c) * STATUS_DAMAGE)));
+    c.hp -= lost;
+    return lost;
   };
   const stats = (c) => {
     const s = SHAPES[c.shape], g = c.level - 1;
-    return { atk: s.atk + g, def: s.def + g, spd: s.spd + g + (held(c).spd || 0) };
+    const st = { atk: s.atk + g, def: s.def + g, spd: s.spd + g + (held(c).spd || 0) };
+    if (c.boost) Object.keys(st).forEach((k) => { st[k] *= stageMul(stage(c, k)); });
+    return st;
   };
   const create = (spec) => {
     const c = {
@@ -231,7 +356,18 @@ const CM = (() => {
   };
 
   // ---- Battle rules ----
-  // Mutates hp. Returns {miss} | {heal} | {domain} | {infinity} | {blocked} | {dmg, eff, crit}.
+  // Applies a move's stage changes and status to the user and foe, adding what happened to `out`:
+  // up / down (how far each stat moved; 0 means it was already at the cap) and inflict (a status that took hold).
+  const sideEffects = (att, def, move, out) => {
+    if (move.up && att.hp > 0) out.up = shift(att, move.up, 1);
+    if (def.hp <= 0) return out;
+    if (move.down) out.down = shift(def, move.down, -1);
+    if (move.inflict && !def.status) { def.status = move.inflict; out.inflict = move.inflict; }
+    return out;
+  };
+  // Mutates hp, stages and status. Returns {miss} | {heal} | {domain} | {infinity} | {blocked} | {dmg, eff, crit},
+  // where a hit can also carry hits (how many landed), drained, recoil, up, down and inflict. A status move returns
+  // only its up / down / inflict, or {failed} when it changed nothing.
   const useMove = (att, def, move, rng = Math.random) => {
     if (rng() * 100 >= move.acc) return { miss: true };
     if (move.heal) {
@@ -240,22 +376,54 @@ const CM = (() => {
       return { heal };
     }
     if (move.domain) return { domain: move.domain };
-    if (isEgg(def) && rng() < INFINITY_RATE) {
+    const aimed = move.power || move.down || move.inflict;
+    if (aimed && isEgg(def) && rng() < INFINITY_RATE) {
       att.hp = Math.max(0, att.hp - INFINITY_DAMAGE);
       return { infinity: INFINITY_DAMAGE };
+    }
+    if (!move.power) {
+      const out = sideEffects(att, def, move, {});
+      const moved = [out.up, out.down].some((m) => m && Object.values(m).some(Boolean));
+      return moved || out.inflict ? out : { failed: true };
     }
     const eff = effectiveness(move.element, def.element);
     const stab = move.element === att.element ? 1.25 : 1;
     const ratio = stats(att).atk / stats(def).def;
     const scale = 0.4 + 0.06 * att.level;
+    const critRate = Math.max(move.crit || 0, held(att).crit || CRIT_RATE);
     const roll = 0.85 + rng() * 0.15;
-    const crit = rng() < (held(att).crit || CRIT_RATE);
+    const crit = rng() < critRate;
     if (held(def).block && rng() < held(def).block) return { blocked: true };
     const boost = STAGE_DMG[att.stage || 0] * (held(att).atk || 1);
-    const dmg = Math.max(1, Math.round(move.power * ratio * scale * stab * eff * roll * boost * (crit ? 1.5 : 1)));
-    def.hp = Math.max(0, def.hp - dmg);
-    return { dmg, eff, crit };
+    const strike = (r, c) => {
+      const d = Math.max(1, Math.round(move.power * ratio * scale * stab * eff * r * boost * (c ? 1.5 : 1)));
+      def.hp = Math.max(0, def.hp - d);
+      return d;
+    };
+    const out = { dmg: strike(roll, crit), eff, crit };
+    // Multi-hit moves keep striking until they run out of hits or the foe faints; each hit rolls its own damage.
+    if (move.hits) {
+      out.hits = 1;
+      for (; out.hits < move.hits && def.hp > 0; out.hits++) {
+        const r = 0.85 + rng() * 0.15, c = rng() < critRate;
+        out.dmg += strike(r, c);
+        out.crit = out.crit || c;
+      }
+    }
+    if (move.drain) {
+      out.drained = Math.min(maxHp(att) - att.hp, Math.max(1, Math.round(out.dmg * move.drain)));
+      att.hp += out.drained;
+    }
+    if (move.recoil) {
+      out.recoil = Math.min(att.hp, Math.max(1, Math.round(out.dmg * move.recoil)));
+      att.hp -= out.recoil;
+    }
+    if ((move.up || move.down || move.inflict) && (!move.chance || rng() * 100 < move.chance)) sideEffects(att, def, move, out);
+    return out;
   };
+  // Whether a status move would still change anything.
+  const worthUsing = (m, user, target) => (m.up && Object.keys(m.up).some((k) => stage(user, k) < STAGE_CAP))
+    || (m.down && Object.keys(m.down).some((k) => stage(target, k) > -STAGE_CAP)) || (m.inflict && !target.status);
   // The move (object) a computer-run Creatamon uses.
   // skill: how often it picks its best move rather than a random one.
   const pickMove = (foe, target, rng = Math.random, skill = 0.6) => {
@@ -265,8 +433,10 @@ const CM = (() => {
     if (heals.length && foe.hp < maxHp(foe) * 0.35 && rng() < 0.5) return heals[0];
     const pool = attacks.length ? attacks : moves;
     if (rng() < skill) {
+      // A status move is worth about a middling attack, as long as it would still change something.
       const score = (m) => {
-        return m.power * m.acc * effectiveness(m.element, target.element) * (m.element === foe.element ? 1.25 : 1);
+        if (!m.power) return worthUsing(m, foe, target) ? 5000 : 0;
+        return m.power * (m.hits || 1) * m.acc * effectiveness(m.element, target.element) * (m.element === foe.element ? 1.25 : 1);
       };
       return pool.reduce((best, m) => (score(m) > score(best) ? m : best));
     }
@@ -440,8 +610,8 @@ const CM = (() => {
   };
   // ---- Champion rank ----
   // Beating alpha Creatamon earns Champion rank. Seven tiers of three steps each, and every tier costs more wins per
-  // step than the one before. Beating the Champion makes you Champion I, and from there every few alpha wins adds
-  // another numeral, without end.
+  // step than the one before. Above Mythic III comes the Champion title, but only for a player who has beaten the
+  // Champion: Champion I a few wins past Mythic III, and from there every few alpha wins adds another numeral, without end.
   const RANK_TIERS = ['Alpha', 'King', 'Emperor', 'Conqueror', 'Warlord', 'Legend', 'Mythic'];
   const roman = (n) => [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]
     .reduce((out, [v, r]) => { while (n >= v) { out += r; n -= v; } return out; }, '');
@@ -450,23 +620,31 @@ const CM = (() => {
   const ALPHA_NEED = ALPHA_TITLES.reduce((need, _, i) => [...need, (need[i - 1] || 0) + 2 + Math.floor(i / 3)], []);
   const alphaRank = (wins) => ALPHA_NEED.filter((n) => (wins || 0) >= n).length;
   const CHAMPION_STEP = 5;
-  // champAt: how many alpha wins the player had on becoming Champion.
-  const championLevel = (wins, champAt) => 1 + Math.floor(Math.max(0, (wins || 0) - (champAt || 0)) / CHAMPION_STEP);
-  const title = (wins, champion, champAt) => (champion ? `Champion ${roman(championLevel(wins, champAt))}` : ALPHA_TITLES[alphaRank(wins) - 1] || '');
-  // The next title up and how many more alpha wins it takes; null once the pre-Champion ladder is finished.
-  const nextRank = (wins, champion, champAt) => {
-    if (champion) { const lv = championLevel(wins, champAt); return { name: `Champion ${roman(lv + 1)}`, left: (champAt || 0) + lv * CHAMPION_STEP - (wins || 0) }; }
-    const r = alphaRank(wins);
-    return r < ALPHA_TITLES.length ? { name: ALPHA_TITLES[r], left: ALPHA_NEED[r] - (wins || 0) } : null;
+  // Alpha wins for Champion I: one step past Mythic III.
+  const CHAMPION_AT = ALPHA_NEED[ALPHA_NEED.length - 1] + CHAMPION_STEP;
+  // 0 until the player has beaten the Champion and reached Champion I, then 1, 2, 3...
+  const championLevel = (wins, champion) => (champion && (wins || 0) >= CHAMPION_AT ? 1 + Math.floor(((wins || 0) - CHAMPION_AT) / CHAMPION_STEP) : 0);
+  const title = (wins, champion) => {
+    const lv = championLevel(wins, champion);
+    return lv ? `Champion ${roman(lv)}` : ALPHA_TITLES[alphaRank(wins) - 1] || '';
   };
-  // The rank the Champion demands of a challenger (an index into ALPHA_TITLES, plus one): King I.
-  const CUP_RANK = 4;
+  // The next title up and how many more alpha wins it takes; null once Mythic III is reached without beating the Champion.
+  const nextRank = (wins, champion) => {
+    const r = alphaRank(wins);
+    if (r < ALPHA_TITLES.length) return { name: ALPHA_TITLES[r], left: ALPHA_NEED[r] - (wins || 0) };
+    if (!champion) return null;
+    const lv = championLevel(wins, champion);
+    return { name: `Champion ${roman(lv + 1)}`, left: CHAMPION_AT + lv * CHAMPION_STEP - (wins || 0) };
+  };
+  // The rank the Champion demands of a challenger (an index into ALPHA_TITLES, plus one): Warlord I, 48 alpha wins.
+  const CUP_RANK = 13;
   // ---- Money ----
   // Beating a trainer pays out by their strongest Creatamon; Leaders pay triple.
   const prize = (team, big) => Math.max(...team.map((t) => t[1])) * 14 * (big ? 3 : 1);
-  // What a Power Card costs at a Creatastop, and how many badges it takes before one is sold.
-  const cardPrice = (id) => [0, 150, 450, 1300][CARDS[id].tier];
-  const cardNeed = (id) => [0, 0, 2, 6][CARDS[id].tier];
+  // What a Power Card costs at a Creatastop, and how many badges it takes before one is sold. Mythic and secret
+  // cards are never sold.
+  const cardPrice = (id) => [0, 150, 450, 1300, 4000][CARDS[id].tier];
+  const cardNeed = (id) => [0, 0, 2, 6, 12][CARDS[id].tier] ?? Infinity;
   const CLOTHES_PRICE = 250;
   const DEX = Object.values(SPECIES).map((m) => ({ name: m.name, element: m.element }));
 
@@ -495,14 +673,27 @@ const CM = (() => {
     if (weight === 1) c.rare = true;
     return c;
   };
-  // drops: percent chance of a [common, rare] card, the rest epic. Returns a card id or null. Rare Creatamon always drop (sure).
-  const rollDrop = (drops, rng = Math.random, sure = false) => {
-    if (!sure && rng() >= 0.5) return null;
-    const [a, b] = drops;
-    const r = rng() * 100;
-    const tier = r < a ? 1 : r < a + b ? 2 : 3;
+  // A random card of one tier. Key cards are never handed out at random.
+  const cardOfTier = (tier, rng = Math.random) => {
     const ids = Object.keys(CARDS).filter((id) => CARDS[id].tier === tier && !CARDS[id].key);
     return ids[Math.floor(rng() * ids.length)];
+  };
+  // drops: percent chance of each tier from Common up ([common, rare] or [common, rare, epic, legendary]); whatever is
+  // left over goes to the next tier up. Returns a card id or null. Rare Creatamon always drop (sure).
+  const rollDrop = (drops, rng = Math.random, sure = false) => {
+    if (!sure && rng() >= 0.5) return null;
+    const r = rng() * 100;
+    let tier = 1, below = 0;
+    while (tier <= drops.length && r >= (below += drops[tier - 1])) tier++;
+    return cardOfTier(tier, rng);
+  };
+  // Alphas always drop a card, and a better one: one in ten is Legendary, and for a Champion one in thirty is Mythic.
+  const ALPHA_LEGENDARY = 0.1, ALPHA_MYTHIC = 1 / 30;
+  const alphaDrop = (drops, champion, rng = Math.random) => {
+    const r = rng();
+    if (champion && r < ALPHA_MYTHIC) return cardOfTier(5, rng);
+    if (r < ALPHA_MYTHIC + ALPHA_LEGENDARY) return cardOfTier(4, rng);
+    return rollDrop(drops, rng, true);
   };
   // Chance of a wild Creatamon per step in an encounter tile.
   const ENCOUNTER_RATE = 0.22;
@@ -510,11 +701,12 @@ const CM = (() => {
   const STARTER_CARDS = ['tackle', 'ember', 'splash_shot', 'leaf_flick', 'hp30', 'hp30'];
 
   return {
-    ELEMENTS, STRONG, SHAPES, CARDS, TIER_NAMES, EGG, MAX_PARTY, CLOTHES, SPECIES, DEX, WILD, ZONE_OF,
+    ELEMENTS, STRONG, SHAPES, CARDS, TIER_NAMES, SECRET, stars, EGG, MAX_PARTY, CLOTHES, SPECIES, DEX, WILD, ZONE_OF,
     STARTER_CARDS, ENCOUNTER_RATE,
     isEgg, setMax, battleMoves, DOMAIN_STRIKE, ITEMS, held, EVOLVE_AT, STAGE_NAMES, STAGE_DMG, STAGE_HP, canEvolve, evolve,
-    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp, levelCap, MOVE_SLOTS, ALPHA_TITLES, ALPHA_NEED, alphaRank, title, nextRank, roman, CUP_RANK, prize, cardPrice, cardNeed, CLOTHES_PRICE,
-    useMove, pickMove, spawn, genWild, rollDrop,
+    STAT_TAGS, STAGE_CAP, STATUS_NAMES, stage, calm, statusTick,
+    effectiveness, cardDesc, maxHp, stats, create, xpToNext, xpYield, gainXp, levelCap, MOVE_SLOTS, ALPHA_TITLES, ALPHA_NEED, alphaRank, CHAMPION_AT, title, nextRank, roman, CUP_RANK, prize, cardPrice, cardNeed, CLOTHES_PRICE,
+    useMove, pickMove, spawn, genWild, rollDrop, cardOfTier, alphaDrop,
   };
 })();
 export { CM };

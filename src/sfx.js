@@ -54,6 +54,8 @@ const SFX = (() => {
     miss: () => tone(340, 0.16, { type: 'sine', vol: 0.05, to: 190 }),
     faint: () => tone(420, 0.5, { type: 'triangle', vol: 0.06, to: 70 }),
     heal: () => run([C5, E5, G5, C6], 0.07, { type: 'sine', vol: 0.05 }),
+    up: () => tone(440, 0.22, { type: 'triangle', vol: 0.05, to: 1320 }),
+    down: () => tone(880, 0.22, { type: 'triangle', vol: 0.05, to: 260 }),
     item: () => run([E5, G5, C6], 0.07, { vol: 0.035 }),
     level: () => run([C5, E5, G5, C6, E6], 0.065, { vol: 0.04 }),
     badge: () => run([C5, C5, G5, 0, E5, G5, C6, 0, E6, G6], 0.11, { vol: 0.045 }),

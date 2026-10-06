@@ -96,6 +96,93 @@ CM.setMax(egg, true);
 assert.ok(CM.battleMoves(egg).some((m) => m.domain), 'Sukuna can open a domain');
 assert.ok(CM.useMove(egg, bully, CM.DOMAIN_STRIKE, () => 0.99).dmg > 0, 'domain strikes cannot miss');
 CM.setMax(egg, false);
+// ---------- Rarities and move effects ----------
+const STATS = Object.keys(CM.STAT_TAGS);
+Object.entries(CARDS).forEach(([id, c]) => {
+  assert.ok(CM.TIER_NAMES[c.tier], `${id}: bad tier`);
+  if (c.kind === 'hp') return assert.ok(c.amount > 0, `${id}: no health`);
+  assert.ok(CM.ELEMENTS[c.element] && c.power >= 0 && c.acc > 0 && c.acc <= 100, `${id}: bad move`);
+  assert.ok(c.power || c.heal || c.up || c.down || c.inflict, `${id}: does nothing`);
+  [c.up, c.down].filter(Boolean).forEach((by) => assert.ok(Object.keys(by).every((k) => STATS.includes(k) && by[k] > 0), `${id}: bad stages`));
+  assert.ok(!c.inflict || CM.STATUS_NAMES[c.inflict], `${id}: bad status`);
+  assert.ok(!c.hits || (c.hits >= 2 && c.power), `${id}: bad hits`);
+  assert.ok(!c.chance || (c.chance < 100 && c.power && (c.up || c.down || c.inflict)), `${id}: chance of nothing`);
+  assert.ok(CM.cardDesc(c) && !CM.cardDesc(c).includes('undefined'), `${id}: bad description`);
+});
+// Every element has a move of every rarity, every new rarity has a health card, and Mythic and secret cards are never sold.
+elements.forEach((el) => [1, 2, 3, 4, 5].forEach((t) => assert.ok(Object.values(CARDS).some((c) => c.element === el && c.tier === t && c.kind === 'move'), `${el}: no tier ${t} move`)));
+[4, 5].forEach((t) => assert.ok(Object.values(CARDS).some((c) => c.kind === 'hp' && c.tier === t), `no tier ${t} health card`));
+Object.keys(CARDS).forEach((id) => assert.strictEqual(CM.cardNeed(id) === Infinity, CARDS[id].tier >= 5, `${id}: wrong shop rule`));
+elements.forEach((el) => assert.strictEqual(Object.values(CARDS).filter((c) => c.tier === 5 && c.element === el).length, 1, `${el}: needs one Mythic move for the Champion`));
+CM.EGG.moves.forEach((id) => assert.strictEqual(CARDS[id].tier, CM.SECRET));
+{
+  const mon = (moves, element = 'Normal') => CM.create({ name: 'T', element, shape: 'Blob', moves, hpCards: ['hp600'], level: 30 });
+  const half = (c) => { c.hp = Math.round(CM.maxHp(c) / 2); return c; };
+  // Several hits, each rolled on its own.
+  const multi = CM.useMove(mon(['bubble_volley']), mon(['tackle']), CARDS.bubble_volley, () => 0.5);
+  assert.ok(multi.hits === 3 && multi.dmg >= 3);
+  // Drain heals by a share of the damage; recoil costs a share of it.
+  const leech = half(mon(['leech_sprout'], 'Grass')), lhp = leech.hp, ld = CM.useMove(leech, mon(['tackle']), CARDS.leech_sprout, () => 0.5);
+  assert.ok(ld.drained === Math.round(ld.dmg * 0.5) && leech.hp === lhp + ld.drained, 'drain heals');
+  const crash = mon(['boulder_crash'], 'Rock'), chp = crash.hp, cr = CM.useMove(crash, mon(['tackle']), CARDS.boulder_crash, () => 0.5);
+  assert.ok(cr.recoil === Math.round(cr.dmg * 0.33) && crash.hp === chp - cr.recoil, 'recoil hurts');
+  // A move's own critical-hit chance.
+  assert.ok(CM.useMove(mon(['rime_needle']), mon(['tackle']), CARDS.rime_needle, () => 0.2).crit && !CM.useMove(mon(['tackle']), mon(['tackle']), CARDS.tackle, () => 0.2).crit);
+  // Stages: up to three steps, each +25%, and a status move with nothing left to change fails.
+  const k = mon(['kindle']), base = CM.stats(k).atk;
+  assert.deepStrictEqual(CM.useMove(k, mon(['tackle']), CARDS.kindle, () => 0.5), { up: { atk: 2 } });
+  assert.strictEqual(CM.stats(k).atk, base * 1.5);
+  assert.deepStrictEqual(CM.useMove(k, mon(['tackle']), CARDS.kindle, () => 0.5), { up: { atk: 1 } });
+  assert.deepStrictEqual(CM.useMove(k, mon(['tackle']), CARDS.kindle, () => 0.5), { failed: true });
+  const hard = mon(['tackle']), soft = mon(['tackle']), victim = () => mon(['tackle']);
+  assert.ok(CM.useMove(k, victim(), CARDS.tackle, () => 0.5).dmg > CM.useMove(hard, victim(), CARDS.tackle, () => 0.5).dmg, 'raised attack hits harder');
+  assert.deepStrictEqual(CM.useMove(hard, soft, CARDS.snarl, () => 0.5), { down: { atk: -1 } });
+  assert.ok(CM.useMove(soft, victim(), CARDS.tackle, () => 0.5).dmg < CM.useMove(hard, victim(), CARDS.tackle, () => 0.5).dmg, 'lowered attack hits softer');
+  assert.ok(CM.stats(mon(['tackle'])).spd > CM.stats(Object.assign(mon(['tackle']), { boost: { spd: -1 } })).spd);
+  // Burns and poison: one at a time, a tenth of max HP a turn, and only from the move's chance.
+  const sick = mon(['tackle']);
+  assert.deepStrictEqual(CM.useMove(hard, sick, CARDS.noxious_fumes, () => 0.5), { inflict: 'poison' });
+  assert.deepStrictEqual(CM.useMove(hard, sick, CARDS.noxious_fumes, () => 0.5), { failed: true });
+  const full = sick.hp;
+  assert.strictEqual(CM.statusTick(sick), Math.round(CM.maxHp(sick) / 10));
+  assert.strictEqual(sick.hp, full - Math.round(CM.maxHp(sick) / 10));
+  assert.ok(!CM.useMove(hard, mon(['tackle']), CARDS.singe, () => 0.5).inflict, 'a 30% burn misses at a roll of 50');
+  assert.strictEqual(CM.useMove(hard, mon(['tackle']), CARDS.singe, () => 0.1).inflict, 'burn');
+  // Leaving the battle clears it all.
+  CM.calm(sick); CM.calm(k);
+  assert.ok(!sick.status && !k.boost && CM.stats(k).atk === base);
+  // The egg's infinity stops moves aimed at it, not ones its foe uses on itself.
+  assert.ok(CM.useMove(mon(['snarl']), yuji('Shadow', 'Beast'), CARDS.snarl, () => 0.5).infinity);
+  assert.ok(CM.useMove(mon(['kindle']), yuji('Shadow', 'Beast'), CARDS.kindle, () => 0.5).up);
+  // Max Mode: the Max move counts every hit, and status moves stay as they are.
+  const maxed = mon(['bubble_volley', 'stone_skin', 'mend'], 'Water');
+  CM.setMax(maxed, true);
+  const bm = CM.battleMoves(maxed);
+  assert.strictEqual(bm.find((m) => m.element === 'Water').power, Math.round(45 * 1.5) + 20);
+  assert.ok(bm.includes(CARDS.stone_skin) && bm.includes(CARDS.mend) && bm.length === 3);
+  // A computer player uses a status move while it still changes something.
+  const ai = mon(['snarl', 'tackle']), mark = mon(['tackle']);
+  assert.strictEqual(CM.pickMove(ai, mark, () => 0.5, 1), CARDS.snarl);
+  mark.boost = { atk: -CM.STAGE_CAP };
+  assert.strictEqual(CM.pickMove(ai, mark, () => 0.5, 1), CARDS.tackle);
+  assert.strictEqual(CM.pickMove(mon(['tackle', 'fury_flurry']), mark, () => 0.5, 1), CARDS.fury_flurry, 'multi-hit counts every hit');
+}
+// Drops: tables add up, Legendary only where a table or an alpha allows, Mythic only from a Champion's alphas.
+[...CM.AREAS, ...Object.values(MAPS).map((m) => m.area || {})].filter((ar) => ar.drops).forEach((ar) =>
+  assert.strictEqual(ar.drops.reduce((s, p) => s + p, 0), 100, `${ar.name}: drop chances do not add up`));
+const seq = (...xs) => () => xs.shift() ?? 0;
+assert.strictEqual(CARDS[CM.rollDrop([10, 50, 38, 2], seq(0.99), true)].tier, 4);
+assert.strictEqual(CARDS[CM.rollDrop([10, 50, 38, 2], seq(0.97), true)].tier, 3);
+assert.strictEqual(CARDS[CM.rollDrop([90, 10, 0], seq(0.95), true)].tier, 2);
+assert.strictEqual(CARDS[CM.alphaDrop([40, 45, 15], true, seq(0))].tier, 5);
+assert.strictEqual(CARDS[CM.alphaDrop([40, 45, 15], false, seq(0))].tier, 4);
+assert.ok(CARDS[CM.alphaDrop([40, 45, 15], true, seq(0.5, 0.2))].tier === 1);
+for (let i = 0; i < 2000; i++) {
+  assert.ok(CARDS[CM.alphaDrop([10, 50, 38, 2], false)].tier <= 4, 'only a Champion finds Mythic cards');
+  const d = CARDS[CM.rollDrop([10, 50, 38, 2], Math.random, true)];
+  assert.ok(d.tier <= 4 && !d.key);
+}
+
 for (let i = 0; i < 300; i++) {
   for (const z of Object.keys(CM.WILD)) {
     const c = CM.genWild(z, [5, 40]);
@@ -255,9 +342,16 @@ stages.forEach(([id, done, before], i) => {
 assert.ok(CM.ALPHA_NEED.every((n, i) => i === 0 || n > CM.ALPHA_NEED[i - 1]) && CM.ALPHA_TITLES.length === CM.ALPHA_NEED.length);
 assert.strictEqual(CM.title(0), '');
 assert.strictEqual(CM.title(CM.ALPHA_NEED[0]), 'Alpha I');
-assert.strictEqual(CM.title(7, true, 7), 'Champion I');
-assert.strictEqual(CM.title(7 + 5 * 13, true, 7), 'Champion XIV');
-assert.strictEqual(CM.nextRank(8, true, 7).left, 4);
+// The Champion title sits above Mythic III, and only a player who has beaten the Champion can earn it.
+const lastAlpha = CM.ALPHA_TITLES[CM.ALPHA_TITLES.length - 1];
+assert.strictEqual(CM.CHAMPION_AT, CM.ALPHA_NEED[CM.ALPHA_NEED.length - 1] + 5);
+assert.strictEqual(CM.title(9, true), 'King I', 'beating the Champion alone gives no title');
+assert.strictEqual(CM.title(CM.CHAMPION_AT, false), lastAlpha);
+assert.strictEqual(CM.nextRank(CM.CHAMPION_AT, false), null);
+assert.strictEqual(CM.nextRank(CM.ALPHA_NEED[CM.ALPHA_NEED.length - 1], true).name, 'Champion I');
+assert.strictEqual(CM.title(CM.CHAMPION_AT, true), 'Champion I');
+assert.strictEqual(CM.title(CM.CHAMPION_AT + 5 * 13, true), 'Champion XIV');
+assert.strictEqual(CM.nextRank(CM.CHAMPION_AT + 1, true).left, 4);
 assert.ok(CM.CUP_RANK <= CM.ALPHA_TITLES.length);
 // Gyms get harder as they go: never fewer trainers, never a duller Leader, never less bulk.
 GYMS.forEach((g, i) => {
