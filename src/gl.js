@@ -26,17 +26,26 @@ const GL3D = (() => {
 
   // b is where the vertex's object touches the ground: a sprite leans back to face the camera,
   // but is hidden or shown by the depth of its feet, so it never cuts into what stands behind it.
-  const VS = `attribute vec3 p; attribute vec3 b; attribute vec2 uv; attribute float sh; uniform mat4 m; varying vec2 vuv; varying float vsh; varying float vd;
-    void main() { vec4 q = m * vec4(b, 1.0); gl_Position = m * vec4(p, 1.0); gl_Position.z = q.z / q.w * gl_Position.w; vuv = uv; vsh = sh; vd = gl_Position.w; }`;
+  // lift slides everything that far towards the eye, along its own line of sight: the picture stays put, only the depth changes.
+  const VS = `attribute vec3 p; attribute vec3 b; attribute vec2 uv; attribute float sh; uniform mat4 m; uniform vec3 eye; uniform float lift;
+    varying vec2 vuv; varying float vsh; varying float vd;
+    void main() {
+      vec4 q = m * vec4(b + normalize(eye - b) * lift, 1.0); gl_Position = m * vec4(p + normalize(eye - p) * lift, 1.0);
+      gl_Position.z = q.z / q.w * gl_Position.w; vuv = uv; vsh = sh; vd = gl_Position.w;
+    }`;
   // sh is how squarely a face meets the sun: lit faces lean warm, shaded ones cool. fog: x = where haze starts, y = where it is total.
-  const FS = `precision mediump float; uniform sampler2D t; uniform float cut; uniform vec3 haze; uniform vec2 fog; varying vec2 vuv; varying float vsh; varying float vd;
+  // ghost: how solid it is drawn (1 = fully).
+  const FS = `precision mediump float; uniform sampler2D t; uniform float cut; uniform float ghost; uniform vec3 haze; uniform vec2 fog;
+    varying vec2 vuv; varying float vsh; varying float vd;
     void main() {
       vec4 c = texture2D(t, vuv); if (c.a <= cut) discard;
       float l = clamp((vsh - 0.55) / 0.45, 0.0, 1.0);
       vec3 lit = c.rgb * vsh * mix(vec3(0.78, 0.86, 1.12), vec3(1.08, 1.04, 0.94), l);
       lit = mix(vec3(dot(lit, vec3(0.3, 0.59, 0.11))), lit, 1.14);
-      gl_FragColor = vec4(mix(lit, haze, smoothstep(fog.x, fog.y, vd)), c.a);
+      gl_FragColor = vec4(mix(lit, haze, smoothstep(fog.x, fog.y, vd)), c.a * ghost);
     }`;
+  // The player shows through anything standing at least this far in front of them (trees, roofs), but not through long grass.
+  const SEE_THROUGH = 0.45, GHOST = 0.55;
   // Towards the sun: high up, to the west and a little south, so shadows fall to the east.
   const SUN = (() => { const v = [-0.5, 0.78, 0.38], n = Math.hypot(...v); return v.map((a) => a / n); })();
   const hex = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16) / 255);
@@ -68,7 +77,9 @@ const GL3D = (() => {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
     gl.useProgram(prog);
     const loc = { p: gl.getAttribLocation(prog, 'p'), b: gl.getAttribLocation(prog, 'b'), uv: gl.getAttribLocation(prog, 'uv'), sh: gl.getAttribLocation(prog, 'sh'),
-      m: gl.getUniformLocation(prog, 'm'), cut: gl.getUniformLocation(prog, 'cut'), haze: gl.getUniformLocation(prog, 'haze'), fog: gl.getUniformLocation(prog, 'fog') };
+      m: gl.getUniformLocation(prog, 'm'), cut: gl.getUniformLocation(prog, 'cut'), haze: gl.getUniformLocation(prog, 'haze'), fog: gl.getUniformLocation(prog, 'fog'),
+      eye: gl.getUniformLocation(prog, 'eye'), lift: gl.getUniformLocation(prog, 'lift'), ghost: gl.getUniformLocation(prog, 'ghost') };
+    gl.uniform1f(loc.ghost, 1);
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     [[loc.p, 3, 0], [loc.uv, 2, 12], [loc.sh, 1, 20], [loc.b, 3, 24]].forEach(([l, n, off]) => { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, n, gl.FLOAT, false, 36, off); });
@@ -305,10 +316,13 @@ const GL3D = (() => {
       moving.g.clearRect(0, 0, moving.cv.width, moving.cv.height);
       moving.g.setTransform(RES, 0, 0, RES, 0, 0);
       const cast = shadow.verts.length;
+      let ghost = null;   // [first vertex, count] of the figure that shows through what hides it
       GFX.shadows(false);
       live.slice(0, COLS * ROWS).forEach((sp, i) => {
         sp.draw(moving.g, (i % COLS) * CELL_W, Math.floor(i / COLS) * CELL_H + 8);
+        const first = moving.verts.length / 9;
         if (sp.fig) figure(moving, i, sp.x, sp.y); else stand(moving, i, sp.x, sp.y, sp.big || 1);
+        if (sp.ghost) ghost = [first, moving.verts.length / 9 - first];
         if (sp.fig) blob(sp.x + 0.62, sp.y + 0.72, 0.42, 0.24);
         if (sp.big) blob(sp.x + 0.6, sp.y + 0.86, 0.75, 0.4);
       });
@@ -323,6 +337,7 @@ const GL3D = (() => {
       gl.clearColor(...haze, 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.uniformMatrix4fv(loc.m, false, new Float32Array(m));
+      gl.uniform3f(loc.eye, ...eye);
       gl.uniform3f(loc.haze, ...haze);
       gl.uniform2f(loc.fog, outdoors ? (id === 'grove' ? 16 : 22) : 900, outdoors ? (id === 'grove' ? 27 : 31) : 1000);
       upload(moving);
@@ -336,6 +351,18 @@ const GL3D = (() => {
       flush(fixed, 0.5);
       gl.enable(gl.BLEND);
       flush(moving, 0.35);
+      if (ghost) {
+        // Drawn again, faded, only where something well in front of it hides it.
+        gl.depthFunc(gl.GREATER);
+        gl.depthMask(false);
+        gl.uniform1f(loc.lift, SEE_THROUGH);
+        gl.uniform1f(loc.ghost, GHOST);
+        gl.drawArrays(gl.TRIANGLES, ...ghost);
+        gl.uniform1f(loc.lift, 0);
+        gl.uniform1f(loc.ghost, 1);
+        gl.depthMask(true);
+        gl.depthFunc(gl.LEQUAL);
+      }
       shadow.verts.length = cast;   // the people's shadows are laid afresh each frame
 
       return (x, up, y) => {

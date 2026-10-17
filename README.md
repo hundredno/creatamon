@@ -39,8 +39,9 @@ uncommitted changes, untracked files included.
 
 ## Play
 
-Run `npm run dev` and open the address it prints, or play the deployed site. Opening `index.html` straight from disk no
-longer works, because browsers do not load JavaScript modules from `file://`. Progress saves automatically in the browser.
+Play it at **https://cmon.maize.live**, or run `npm run dev` and open the address it prints. Opening `index.html`
+straight from disk no longer works, because browsers do not load JavaScript modules from `file://`. Progress saves
+automatically in the browser.
 
 | Key | Action |
 | --- | --- |
@@ -243,5 +244,34 @@ The game is plain JavaScript modules in `src/`, bundled by Vite. `index.html` lo
 - `public/` is copied into the build as is. The secret Creatamon uses `img/modulo-yuji.png` (and `img/sukuna.png` in
   Max Mode) when those files exist, so drop them into `public/img/` to use them; otherwise it is drawn
 - `vite.config.js` works out the version label; `wrangler.jsonc` and `public/_headers` set up the Cloudflare deploy
-- `npm test` (`node test/core.test.js`) checks the rules, solves every gym puzzle by search, and walks the story from start
-  to Champion to prove every step is reachable in order
+- `npm test` (`node test/core.test.js`) checks the rules, solves every gym puzzle by search (the same search the autoplay
+  bot uses), and walks the story from start to Champion to prove every step is reachable in order
+- `tools/autoplay/` is the autoplay bot and the video tools (below). None of it goes into the game build
+
+## Autoplay and recordings
+
+A bot plays the game the way a person does: it only presses keys and clicks, at a human pace, and it reads only what a
+player can see (the screen, and the save the game writes) plus the map and rules, as a player with a walkthrough would.
+It never opens developer mode, never changes the save, and never forges the secret Creatamon. It builds and rebuilds its
+team at the Forge, trains, shops, solves every gym puzzle, hunts alphas, and plays the story through to the Champion.
+
+```bash
+npm run autoplay -- --turbo --until badges=3      # a practice run, as fast as the page can draw (flat view, no sound)
+npm run autoplay -- --record                       # a real-time run in 3D with sound, recorded to recordings/<date>/
+npm run video -- recordings/<date>                 # cut the YouTube video, Short, X video, thumbnail and upload notes
+```
+
+- `--until` stops at `badges=N`, `champion`, `alphas=N`, `minutes=N`, or by default `champion-i`: the Champion beaten,
+  the title Champion I, and every Creatamon in the party at the level limit.
+- `--from <save.json>` starts a practice run from a checkpoint: every run saves one at each badge and story step, in
+  `checkpoints/`. A recording always starts from New Game.
+- `--headed` shows the browser; `--wall N` stops after N real minutes.
+- Each run writes `telemetry.jsonl` (what happened, and the scoreboard numbers every few seconds), `inputs.jsonl`
+  (every key and click), `audit.json` (checks that the run was played straight) and the final save.
+- A recording runs Chrome on the GPU in a 1920x1080 page: the game box is 1260x924, its largest scale. Video comes from
+  Chrome's screencast at 60 fps, sound from a tap on the game's own Web Audio output. A clapperboard (a white square in
+  the page's corner, outside the game, and a beep only the recording hears) every ten minutes keeps them in sync.
+- The YouTube cut keeps the whole run in order and skips nothing: the key moments play at real speed and everything
+  else is sped up, marked ×N, under the game's own music. The scoreboard comes from the save.
+- Recordings are large (about 5 GB an hour) and are not checked in (`recordings/` is in `.gitignore`).
+- Needs Google Chrome and ffmpeg.

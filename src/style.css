@@ -282,6 +282,9 @@ button { color: inherit; }
 /* A move with effects can need a second line to describe. */
 #actions.menu .movelist button:not(.back) { height: auto; min-height: 42px; }
 #actions.menu .movelist small { white-space: normal; }
+/* Two columns keep even six moves low enough that the player's panel, with its HP and XP, stays in view. */
+#actions.menu .movelist { width: 470px; display: grid; grid-template-columns: 1fr 1fr; }
+#actions.menu .movelist button.back { grid-column: 1 / -1; }
 
 /* ---- Menu pages ---- */
 #menu { background: #eef1f6; padding: 16px 22px; }
@@ -289,6 +292,8 @@ button { color: inherit; }
 #menu h2 { font-size: 23px; font-weight: 800; }
 #menu h3 { font-size: 12.5px; letter-spacing: .09em; color: #5a647c; margin: 14px 0 6px; }
 #menu button.plain, #menu header button, .filebtn { border: 1.5px solid #1d2437; border-radius: 999px; background: #fff; padding: 4px 13px; }
+/* Header buttons are white pills, so they keep dark text even on the home page's white heading. */
+#menu header button { color: #1d2437; }
 #menu button.plain:hover:not(:disabled), #menu header button:hover, .filebtn:hover { background: #1d2437; color: #fff; }
 #menu button.on { background: #1d2437; color: #fff; }
 #menu button.primary { background: #e8384f; border-color: #e8384f; border-radius: 999px; }
@@ -326,7 +331,7 @@ button { color: inherit; }
 #menu.home .badges span { color: #fff9; border-color: #fff6; }
 #menu.home .badges span.won { color: #1d2437; border-color: #fff; }
 #title { background: linear-gradient(135deg, #e8384f 0 46%, #c92a40 46% 54%, #1d2437 54%); }
-#title button { border: 0; border-radius: 999px; box-shadow: 0 5px 0 #0004; }
+#title button { border: 0; border-radius: 999px; box-shadow: 0 5px 0 #0004; color: #1d2437; }
 .info.me { bottom: 232px; }
 #place { top: 118px; }
 

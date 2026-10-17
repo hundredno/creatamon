@@ -437,11 +437,14 @@ import { GL3D } from './gl.js';
     S.money += coins;
     addItem('potion');
     toast('🎁', `Daily gift · day ${S.streak}`, `+${COIN}${coins} and a Potion`);
+    updateHud();
   }
 
   // ---------- HUD ----------
   let lastArea = null;
   function updateHud() {
+    // Trophies first, so the coins below already include any prize just won.
+    checkTrophies();
     const name = CM.areaAt(S.map, S.x, S.y).name;
     $('area').textContent = name;
     // Any developer switch left on is spelled out, so it cannot be mistaken for how the game normally behaves.
@@ -457,7 +460,6 @@ import { GL3D } from './gl.js';
     }
     reveal();
     drawMap($('minimap'), 46);
-    checkTrophies();
   }
 
   function goTo(map, x, y, dir = S.dir) {
@@ -2013,7 +2015,7 @@ import { GL3D } from './gl.js';
     if (idx == null) {
       const made = Object.assign(CM.create({ ...draft, name, art }), { artUp });
       if (S.party.length < CM.MAX_PARTY) S.party.push(made);
-      else { S.storage.push(made); alert(`Your party is full, so ${name} was sent to Storage.\n\nOpen Storage from the menu to swap it in.`); }
+      else { S.storage.push(made); toast('📦', `${name} went to Storage`, 'Your party is full. Swap it in from Storage.'); }
     } else {
       const c = S.party[idx];
       const before = CM.maxHp(c);
@@ -2056,12 +2058,19 @@ import { GL3D } from './gl.js';
     }
     if (d.opt) { SFX.set(d.opt, !SFX.opts[d.opt]); SFX.play('select'); return renderMenu(); }
     if (d.fly) {
-      if (S.map !== 'world') return alert('You can only travel from outdoors. Step outside first.');
+      if (S.map !== 'world') return toast('✈', 'Step outside first', 'You can only travel from outdoors.');
       const [x, y] = d.fly.split(',').map(Number);
       goTo('world', x, y, 'down');
       S.heal = ['world', x, y];
       alphas.length = 0;
-      return closeMenu();
+      closeMenu();
+      // Fast travel lands on the town's heal pad, and the pad does its job.
+      if (S.party.some((c) => c.hp < CM.maxHp(c))) {
+        healAll();
+        SFX.play('heal');
+        if (mode === 'world') talk('The heal pad hums... your Creatamon are fully restored!');
+      }
+      return;
     }
     if (d.dev) return devDo(d.dev, d.v);
     if (d.store) { S.storage.push(S.party.splice(+d.store, 1)[0]); save(); return renderMenu(); }
@@ -2112,7 +2121,7 @@ import { GL3D } from './gl.js';
     if (d.a === 'evolve') {
       const c = S.party[+d.i], was = CM.maxHp(c);
       CM.evolve(c);
-      alert(`${c.name} evolved${c.stage === 2 ? ' into its final form' : ''}!\n\n+${CM.maxHp(c) - was} max HP, and its attacks now deal ${Math.round((CM.STAGE_DMG[c.stage] - 1) * 100)}% extra damage.`);
+      toast('🌟', `${c.name} evolved${c.stage === 2 ? ' into its final form' : ''}!`, `+${CM.maxHp(c) - was} max HP · attacks +${Math.round((CM.STAGE_DMG[c.stage] - 1) * 100)}%`);
     }
     if (d.a === 'new') return openForge(null);
     if (d.a === 'edit') return openForge(+d.i);
@@ -2291,7 +2300,8 @@ import { GL3D } from './gl.js';
       // The camera follows the player but stops short of the map's edge; small rooms sit in the middle.
       const cx = w <= 15 ? w / 2 : Math.max(7.5, Math.min(w - 7.5, tx + 0.5));
       const cy = h <= 14 ? h / 2 + 1.5 : Math.max(8.5, Math.min(h - 5.5, ty + 0.5));
-      const sprites = [{ x: tx, y: ty, draw: me, fig: true }];
+      // ghost: the player shows through trees and roofs that stand in front of them.
+      const sprites = [{ x: tx, y: ty, draw: me, fig: true, ghost: true }];
       alphas.forEach((a) => sprites.push({ x: a.px + (a.x - a.px) * a.t, y: a.py + (a.y - a.py) * a.t, big: 1.8, draw: (g, sx, sy) => drawAlpha(g, a, sx, sy, time) }));
       for (let y = Math.floor(cy) - 11; y <= Math.floor(cy) + 7; y++) {
         for (let x = Math.floor(cx) - 12; x <= Math.floor(cx) + 12; x++) {

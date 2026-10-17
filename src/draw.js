@@ -653,10 +653,8 @@ const GFX = (() => {
   // ---------- Creatures ----------
   // Sprites are drawn in a 100x100 box facing left; flip makes them face right.
   // The easter egg uses img/modulo-yuji.png when that file exists, else a drawn stand-in.
-  // Its Max Mode form likewise uses img/sukuna.png if present.
-  const eggImg = new Image(), sukunaImg = new Image();
-  eggImg.src = 'img/modulo-yuji.png';
-  sukunaImg.src = 'img/sukuna.png';
+  // Its Max Mode form likewise uses img/sukuna.png if present. Neither is asked for until the egg is on screen.
+  const EGG_ART = { egg: 'img/modulo-yuji.png', max: 'img/sukuna.png' };
   const artCache = new Map();
   function artImage(src, onLoad) {
     let im = artCache.get(src);
@@ -671,9 +669,9 @@ const GFX = (() => {
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, cv.width, cv.height);
     const egg = CM.isEgg(c), sukuna = egg && c.max;
-    const eggArt = sukuna ? sukunaImg : eggImg;
-    const im = egg ? (eggArt.naturalWidth ? eggArt : null)
-      : c.art ? artImage(c.art, () => { if (cv.shown === c) drawCreature(cv, c, flip); }) : null;
+    const redraw = () => { if (cv.shown === c) drawCreature(cv, c, flip); };
+    const eggArt = egg && artImage(EGG_ART[sukuna ? 'max' : 'egg'], redraw);
+    const im = egg ? (eggArt.naturalWidth ? eggArt : null) : c.art ? artImage(c.art, redraw) : null;
     if (im) {
       if (!im.naturalWidth) return;
       g.imageSmoothingEnabled = egg || !!c.artUp;

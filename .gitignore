@@ -152,3 +152,6 @@ vite.config.ts.timestamp-*
 ref/
 # Wrangler local state
 .wrangler/
+
+# Autoplay runs and recordings (large)
+recordings/

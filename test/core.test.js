@@ -1,6 +1,7 @@
 // Run with: node test/core.test.js
 import assert from 'node:assert';
 import { CM } from '../src/world.js';
+import { solvePuzzle } from '../tools/autoplay/puzzles.mjs';
 
 const { MAPS, NPCS, CHESTS, GYMS, TEAMS, CARDS, SPECIES } = CM;
 const DIRS = Object.keys(CM.DIRS);
@@ -196,46 +197,12 @@ for (let i = 0; i < 300; i++) {
 
 // ---------- Gym puzzles can all be solved ----------
 const all = new Proxy({}, { get: () => true });
-const canon = (P) => JSON.stringify([Object.keys(P.blocks).sort(), Object.keys(P.fill).sort(), Object.keys(P.lit).sort(), P.sw, P.fire, P.solved]);
-// Search over (position, puzzle state) for a way to stand next to the Leader. Breadth-first, except the
-// panel puzzle: its states are whole paths, so depth-first finds an answer without holding them all.
-function solve(id) {
-  const m = MAPS[id], S = { smashed: all, surf: false };
-  const [lx, ly] = m.leader;
-  const blocked = (x, y) => x === lx && y === ly;
-  const start = { x: m.entry[0], y: m.entry[1], P: CM.initPuzzle(id), n: 0 };
-  const seen = new Set(), stack = [start];
-  const deep = m.puzzle === 'panels';
-  for (let head = 0; deep ? stack.length : head < stack.length; head++) {
-    const st = deep ? stack.pop() : stack[head];
-    const k = `${st.x},${st.y}|${canon(st.P)}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    assert.ok(seen.size < 3e6, `${id}: search too large`);
-    if (Math.abs(st.x - lx) + Math.abs(st.y - ly) === 1) return st.n;
-    const clone = () => JSON.parse(JSON.stringify(st.P));
-    for (const dir of DIRS) {
-      const P = clone();
-      const res = CM.step(id, P, S, st.x, st.y, dir, blocked);
-      if (!res || CM.arrive(id, P, res.x, res.y) === 'shock') continue;
-      const [tx, ty] = CM.teleAt(id, res.x, res.y) || [res.x, res.y];
-      stack.push({ x: tx, y: ty, P, n: st.n + 1 });
-    }
-    m.fires.forEach((fk, i) => {
-      const [fx, fy] = fk.split(',').map(Number);
-      if (Math.abs(st.x - fx) + Math.abs(st.y - fy) !== 1) return;
-      const P = clone();
-      CM.toggleFire(id, P, i);
-      stack.push({ x: st.x, y: st.y, P, n: st.n + 1 });
-    });
-  }
-  return -1;
-}
 GYMS.forEach((g) => {
   const id = `gym_${g.el}`, m = MAPS[id];
-  const t0 = Date.now(), n = solve(id);
-  if (process.env.VERBOSE) console.log(id, 'solved, path length', n, `${Date.now() - t0}ms`);
-  assert.ok(n >= 0, `${id} cannot be solved`);
+  // The search the autoplay bot uses: a way from the door to the Leader, as moves to make.
+  const t0 = Date.now(), answer = solvePuzzle(id);
+  if (process.env.VERBOSE) console.log(id, 'solved, path length', answer && answer.n, `${Date.now() - t0}ms`);
+  assert.ok(answer, `${id} cannot be solved`);
   // ...and the Leader is walled off until it is (the quiz gym uses gatekeepers instead).
   if (m.puzzle === 'quiz') return;
   const P = CM.initPuzzle(id), S = { smashed: all, surf: false }, seen = new Set([key(...m.entry)]), queue = [m.entry];
